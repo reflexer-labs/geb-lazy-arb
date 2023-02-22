@@ -29,11 +29,18 @@ contract LazyArbTest is Test {
                 safeManager
             )
         );
-        lazyArb = LazyArb(address(proxy));
+        lazyArb = LazyArb(payable(address(proxy)));
     }
 
     function testRedemptionRate() public {
         uint256 redemptionRate = lazyArb.redemptionRate();
         assertEq(redemptionRate, OracleRelayerLike(oracle).redemptionRate());
+    }
+
+    function testDepositETH() public {
+        hoax(user);
+        uint256 depositAmount = 10 ether;
+        assertTrue(lazyArb.depositETH{value: depositAmount}());
+        assertEq(address(lazyArb).balance, depositAmount);
     }
 }

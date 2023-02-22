@@ -19,4 +19,8 @@ contract LazyArb is LazyArbLike {
     function redemptionRate() external view returns (uint256) {
         return oracleRelayer.redemptionRate();
     }
+
+    function depositETH() external payable returns (bool success) {
+        return true;
+    }
 }
