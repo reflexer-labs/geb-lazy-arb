@@ -168,7 +168,10 @@ contract LazyArb is ReentrancyGuardUpgradeable {
     /// @dev can execute only if the redemption rate is negative
     /// @param deltaWad uint - Amount
     function lockETHAndGenerateDebt(uint256 deltaWad) external {
-        require(oracleRelayer.redemptionRate() < RAY, "LazyArb/redemption-rate-positive");
+        require(
+            oracleRelayer.redemptionRate() < RAY,
+            "LazyArb/redemption-rate-positive"
+        );
 
         address safeHandler = safeManager.safes(safe);
         bytes32 collateralType = safeManager.collateralTypes(safe);
