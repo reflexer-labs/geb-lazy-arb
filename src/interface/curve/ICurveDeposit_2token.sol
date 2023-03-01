@@ -2,7 +2,9 @@
 pragma solidity 0.8.17;
 
 interface ICurveDeposit_2token {
-    function get_virtual_price() external view returns (uint);
+    function coins(uint256 arg0) external view returns (address);
+
+    function lp_token() external view returns (address);
 
     function add_liquidity(
         uint256[2] calldata amounts,
@@ -14,20 +16,9 @@ interface ICurveDeposit_2token {
         uint256 max_burn_amount
     ) external;
 
-    function remove_liquidity(
-        uint256 _amount,
-        uint256[2] calldata amounts
+    function remove_liquidity_one_coin(
+        uint256 _token_amount,
+        int128 i,
+        uint256 _min_amount
     ) external;
-
-    function exchange(
-        int128 from,
-        int128 to,
-        uint256 _from_amount,
-        uint256 _min_to_amount
-    ) external payable;
-
-    function calc_token_amount(
-        uint256[2] calldata amounts,
-        bool deposit
-    ) external view returns (uint);
 }
