@@ -6,17 +6,17 @@ import "../interface/IConnector.sol";
 import "../interface/curve/ICurveDeposit_2token.sol";
 
 contract CurveConnector is IConnector {
-    address public depositToken;
+    address public underlying;
     ICurveDeposit_2token public pool;
     uint256 private _tokenIndex;
 
-    constructor(address _depositToken, address _pool) {
-        depositToken = _depositToken;
+    constructor(address _underlying, address _pool) {
+        underlying = _underlying;
         pool = ICurveDeposit_2token(_pool);
 
-        if (pool.coins(0) == _depositToken) {
+        if (pool.coins(0) == _underlying) {
             _tokenIndex = 0;
-        } else if (pool.coins(1) == _depositToken) {
+        } else if (pool.coins(1) == _underlying) {
             _tokenIndex = 1;
         } else {
             revert("invalid pool");
@@ -24,7 +24,7 @@ contract CurveConnector is IConnector {
     }
 
     function depositAll() external {
-        _deposit(IERC20(depositToken).balanceOf(address(this)));
+        _deposit(IERC20(underlying).balanceOf(address(this)));
     }
 
     function deposit(uint256 amount) external {
