@@ -2,11 +2,13 @@
 pragma solidity 0.8.17;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "../interface/IConnector.sol";
 import "../interface/curve/ICurveDeposit_2token.sol";
 
 contract CurveConnector is IConnector {
-    address public underlying;
+    using SafeERC20 for IERC20;
+
     ICurveDeposit_2token public pool;
     uint256 private _tokenIndex;
 
@@ -21,35 +23,35 @@ contract CurveConnector is IConnector {
         } else {
             revert("invalid pool");
         }
+
+        lpToken = pool.lp_token();
     }
 
-    function depositAll() external {
-        _deposit(IERC20(underlying).balanceOf(address(this)));
-    }
+    function deposit(uint256 amount) external override {
+        IERC20(underlying).safeTransferFrom(msg.sender, address(this), amount);
+        IERC20(underlying).safeApprove(address(pool), 0);
+        IERC20(underlying).safeApprove(address(pool), amount);
 
-    function deposit(uint256 amount) external {
-        _deposit(amount);
-    }
-
-    function withdrawAll() external {
-        uint256 lpBalance = IERC20(pool.lp_token()).balanceOf(address(this));
-        pool.remove_liquidity_one_coin(
-            lpBalance,
-            int128(uint128(_tokenIndex)),
-            0
-        );
-    }
-
-    function withdraw(uint256 amount) external {
-        uint256 lpBalance = IERC20(pool.lp_token()).balanceOf(address(this));
-        uint256[2] memory amounts;
-        amounts[_tokenIndex] = amount;
-        pool.remove_liquidity_imbalance(amounts, lpBalance);
-    }
-
-    function _deposit(uint256 amount) internal {
         uint256[2] memory amounts;
         amounts[_tokenIndex] = amount;
         pool.add_liquidity(amounts, 0);
+
+        IERC20(lpToken).safeTransfer(
+            msg.sender,
+            IERC20(lpToken).balanceOf(address(this))
+        );
+    }
+
+    function withdraw(uint256 lpTokenAmount) external override {
+        IERC20(lpToken).safeTransferFrom(
+            msg.sender,
+            address(this),
+            lpTokenAmount
+        );
+        pool.remove_liquidity_one_coin(
+            lpTokenAmount,
+            int128(uint128(_tokenIndex)),
+            0
+        );
     }
 }

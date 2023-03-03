@@ -2,41 +2,35 @@
 pragma solidity 0.8.17;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "../interface/IConnector.sol";
 import "../interface/aave/ILendingPool.sol";
 
 contract AaveConnector is IConnector {
-    address public underlying;
-    address public aToken;
+    using SafeERC20 for IERC20;
+
     ILendingPool public pool;
 
     constructor(address _underlying, address _pool) {
         underlying = _underlying;
         pool = ILendingPool(_pool);
-        aToken = pool.getReserveData(_underlying).aTokenAddress;
+        lpToken = pool.getReserveData(_underlying).aTokenAddress;
     }
 
-    function depositAll() external {
-        _deposit(IERC20(underlying).balanceOf(address(this)));
+    function deposit(uint256 amount) external override {
+        IERC20(underlying).safeTransferFrom(msg.sender, address(this), amount);
+        IERC20(underlying).safeApprove(address(pool), 0);
+        IERC20(underlying).safeApprove(address(pool), amount);
+
+        pool.deposit(underlying, amount, msg.sender, 0);
     }
 
-    function deposit(uint256 amount) external {
-        _deposit(amount);
-    }
-
-    function withdrawAll() external {
-        _withdraw(IERC20(aToken).balanceOf(address(this)));
-    }
-
-    function withdraw(uint256 amount) external {
-        _withdraw(amount);
-    }
-
-    function _deposit(uint256 amount) internal {
-        pool.deposit(underlying, amount, address(this), 0);
-    }
-
-    function _withdraw(uint256 amount) internal {
-        pool.withdraw(underlying, amount, address(this));
+    function withdraw(uint256 lpTokenAmount) external override {
+        IERC20(lpToken).safeTransferFrom(
+            msg.sender,
+            address(this),
+            lpTokenAmount
+        );
+        pool.withdraw(underlying, type(uint256).max, msg.sender);
     }
 }
