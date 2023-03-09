@@ -248,7 +248,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
     /// @notice Transfer rad amount of COIN from the safe address to a dst address.
     /// @param dst address - destination address
     /// uint rad - amount
-    function transferInternalCoins(address dst, uint rad) public {
+    function transferInternalCoins(address dst, uint rad) internal {
         safeManager.transferInternalCoins(safe, dst, rad);
     }
 
