@@ -2,7 +2,10 @@
 pragma solidity 0.8.17;
 
 import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
+import "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
 import "./interface/IConnector.sol";
+import "forge-std/console.sol";
 
 abstract contract CollateralLike {
     function approve(address, uint) public virtual;
@@ -126,7 +129,10 @@ abstract contract TaxCollectorLike {
 }
 
 contract LazyArb is ReentrancyGuardUpgradeable {
-    uint256 constant RAY = 10 ** 27;
+    uint256 private constant RAY = 10 ** 27;
+    ISwapRouter private constant uniswapV3Router =
+        ISwapRouter(0xE592427A0AEce92De3Edee1F18E0157C05861564);
+    IERC20Upgradeable private constant DAI = IERC20Upgradeable(0x6B175474E89094C44Da98b954EedeAC495271d0F);
 
     ManagerLike public safeManager;
     SAFEEngineLike public safeEngine;
@@ -185,8 +191,11 @@ contract LazyArb is ReentrancyGuardUpgradeable {
     /// @notice Locks Eth, generates debt and sends COIN amount (deltaWad) to msg.sender
     /// @dev can execute only if the redemption rate is negative
     /// @param deltaWad uint - Amount
+    /// @param minDaiAmount uint - Minimum DAI amount expect in swap
+    /// @param connector address - External connector address
     function lockETHAndGenerateDebt(
         uint256 deltaWad,
+        uint256 minDaiAmount,
         address connector
     ) external {
         require(
@@ -215,8 +224,25 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         coinJoin.exit(address(this), deltaWad);
 
         uint256 systemCoinBalance = systemCoin.balanceOf(address(this));
-        systemCoin.approve(connector, systemCoinBalance);
-        IConnector(connector).deposit(systemCoinBalance);
+        systemCoin.approve(address(uniswapV3Router), systemCoinBalance);
+
+        uniswapV3Router.exactInputSingle(
+            ISwapRouter.ExactInputSingleParams({
+                tokenIn: address(systemCoin),
+                tokenOut: address(DAI),
+                fee: uint24(500),
+                recipient: address(this),
+                deadline: block.timestamp,
+                amountIn: systemCoinBalance,
+                amountOutMinimum: minDaiAmount,
+                sqrtPriceLimitX96: 0
+            })
+        );
+
+        uint256 daiBalance = DAI.balanceOf(address(this));
+        DAI.approve(connector, daiBalance);
+
+        IConnector(connector).deposit(daiBalance);
     }
 
     /// @notice Joins the system with the a specified value

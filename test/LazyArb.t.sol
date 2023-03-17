@@ -67,7 +67,7 @@ contract LazyArbTest is Test {
     function testLockETHAndGenerateDebt() public {
         startHoax(user);
         this.depositETH(10 ether);
-        lazyArb.lockETHAndGenerateDebt(400 * 1e19, address(connector2));
+        lazyArb.lockETHAndGenerateDebt(4000 * 1e18, 10000 * 1e18, address(connector2));
         vm.stopPrank();
     }
 }
