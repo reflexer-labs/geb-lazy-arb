@@ -5,7 +5,6 @@ import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.
 import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 import "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
 import "./interface/IConnector.sol";
-import "forge-std/console.sol";
 
 abstract contract CollateralLike {
     function approve(address, uint) public virtual;
@@ -128,6 +127,61 @@ abstract contract TaxCollectorLike {
     function taxSingle(bytes32) public virtual returns (uint);
 }
 
+interface GemLike {
+    function approve(address, uint) external;
+    function transfer(address, uint) external;
+    function transferFrom(address, address, uint) external;
+    function deposit() external payable;
+    function withdraw(uint) external;
+}
+
+interface DaiManagerLike {
+    function cdpCan(address, uint, address) external view returns (uint);
+    function ilks(uint) external view returns (bytes32);
+    function owns(uint) external view returns (address);
+    function urns(uint) external view returns (address);
+    function vat() external view returns (address);
+    function open(bytes32, address) external returns (uint);
+    function give(uint, address) external;
+    function cdpAllow(uint, address, uint) external;
+    function urnAllow(address, uint) external;
+    function frob(uint, int, int) external;
+    function flux(uint, address, uint) external;
+    function move(uint, address, uint) external;
+    function exit(address, uint, address, uint) external;
+    function quit(uint, address) external;
+    function enter(address, uint) external;
+    function shift(uint, uint) external;
+}
+
+interface VatLike {
+    function can(address, address) external view returns (uint);
+    function ilks(bytes32) external view returns (uint, uint, uint, uint, uint);
+    function dai(address) external view returns (uint);
+    function urns(bytes32, address) external view returns (uint, uint);
+    function frob(bytes32, address, address, address, int, int) external;
+    function hope(address) external;
+    function move(address, address, uint) external;
+}
+
+interface GemJoinLike {
+    function dec() external returns (uint);
+    function gem() external returns (GemLike);
+    function join(address, uint) external payable;
+    function exit(address, uint) external;
+}
+
+interface DaiJoinLike {
+    function vat() external returns (VatLike);
+    function dai() external returns (GemLike);
+    function join(address, uint) external payable;
+    function exit(address, uint) external;
+}
+
+interface JugLike {
+    function drip(bytes32) external returns (uint);
+}
+
 contract LazyArb is ReentrancyGuardUpgradeable {
     uint256 private constant RAY = 10 ** 27;
     ISwapRouter private constant uniswapV3Router =
@@ -140,9 +194,14 @@ contract LazyArb is ReentrancyGuardUpgradeable {
     CollateralJoinLike public ethJoin;
     CoinJoinLike public coinJoin;
     SystemCoinLike public systemCoin;
+    DaiManagerLike public dai_manager;
+    JugLike public dai_jug;
+    GemJoinLike public dai_ethJoin;
+    DaiJoinLike public dai_daiJoin;
     OracleRelayerLike public oracleRelayer;
 
     uint256 public safe;
+    uint256 public cdp;
 
     /// @notice Initialize LazyArb contract
     /// @param safeManager_ address
@@ -155,12 +214,20 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         address taxCollector_,
         address ethJoin_,
         address coinJoin_,
+        address dai_manager_,
+        address dai_jug_,
+        address dai_ethJoin_,
+        address dai_daiJoin_,
         address oracleRelayer_
     ) external initializer {
         require(safeManager_ != address(0), "LazyArb/null-safe-manager");
         require(taxCollector_ != address(0), "LazyArb/null-tax-collector");
         require(ethJoin_ != address(0), "LazyArb/null-eth-join");
         require(coinJoin_ != address(0), "LazyArb/null-coin-join");
+        require(dai_manager_ != address(0), "LazyArb/null-dai-manager");
+        require(dai_jug_ != address(0), "LazyArb/null-dai-jug");
+        require(dai_ethJoin_ != address(0), "LazyArb/null-dai-eth-join");
+        require(dai_daiJoin_ != address(0), "LazyArb/null-dai-dai-join");
         require(oracleRelayer_ != address(0), "LazyArb/null-oracle-relayer");
 
         safeManager = ManagerLike(safeManager_);
@@ -174,6 +241,13 @@ contract LazyArb is ReentrancyGuardUpgradeable {
 
         safe = safeManager.openSAFE("ETH-A", address(this));
         safeManager.allowSAFE(safe, msg.sender, 1);
+
+        dai_manager = DaiManagerLike(dai_manager_);
+        dai_jug = JugLike(dai_jug_);
+        dai_ethJoin = GemJoinLike(dai_ethJoin_);
+        dai_daiJoin = DaiJoinLike(dai_daiJoin_);
+
+        cdp = dai_manager.open("ETH-A", address(this));
 
         oracleRelayer.redemptionPrice();
     }

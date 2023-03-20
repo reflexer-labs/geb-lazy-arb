@@ -23,6 +23,10 @@ contract LazyArbTest is Test {
     address public taxCollector = address(0xcDB05aEda142a1B0D6044C09C64e4226c1a281EB);
     address public ethJoin = address(0x2D3cD7b81c93f188F3CB8aD87c8Acc73d6226e3A);
     address public coinJoin = address(0x0A5653CCa4DB1B6E265F47CAf6969e64f1CFdC45);
+    address public dai_manager = address(0x5ef30b9986345249bc32d8928B7ee64DE9435E39);
+    address public dai_jug = address(0x19c0976f590D67707E62397C87829d896Dc0f1F1);
+    address public dai_ethJoin = address(0x2F0b23f53734252Bda2277357e97e1517d6B042A);
+    address public dai_daiJoin = address(0x9759A6Ac90977b93B58547b4A71c78317f391A28);
     address public oracle = address(0x4ed9C0dCa0479bC64d8f4EB3007126D5791f7851);
     address public RAI = address(0x03ab458634910AaD20eF5f1C8ee96F1D6ac54919);
     address public AaveLendigPool = address(0x7d2768dE32b0b80b7a3454c06BdAc94A69DDc7A9);
@@ -34,11 +38,15 @@ contract LazyArbTest is Test {
         proxy = new BeaconProxy(
             address(beacon),
             abi.encodeWithSignature(
-                "initialize(address,address,address,address,address)",
+                "initialize(address,address,address,address,address,address,address,address,address)",
                 safeManager,
                 taxCollector,
                 ethJoin,
                 coinJoin,
+                dai_manager,
+                dai_jug,
+                dai_ethJoin,
+                dai_daiJoin,
                 oracle
             )
         );
