@@ -319,6 +319,30 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         IConnector(connector).deposit(daiBalance);
     }
 
+    function lockETHAndDraw(uint wadD) external {
+        require(
+            oracleRelayer.redemptionRate() > RAY,
+            "LazyArb/redemption-rate-positive"
+        );
+
+        address urn = dai_manager.urns(cdp);
+        address vat = dai_manager.vat();
+        bytes32 ilk = dai_manager.ilks(cdp);
+        // Receives ETH amount, converts it to WETH and joins it into the vat
+        uint256 collateralBalance = address(this).balance;
+        dai_ethJoin_join(urn, collateralBalance);
+        // Locks WETH amount into the CDP and generates debt
+        dai_manager.frob(cdp, toInt(collateralBalance), _getDrawDart(vat, urn, ilk, wadD));
+        // Moves the DAI amount (balance in the vat in rad) to proxy's address
+        dai_manager.move(cdp, address(this), toRad(wadD));
+        // Allows adapter to access to proxy's DAI balance in the vat
+        if (VatLike(vat).can(address(this), address(dai_daiJoin)) == 0) {
+            VatLike(vat).hope(address(dai_daiJoin));
+        }
+        // Exits DAI to the user's wallet as a token
+        dai_daiJoin.exit(msg.sender, wadD);
+    }
+
     /// @notice Joins the system with the a specified value
     /// @param safeHandler address
     /// @param value uint - Value to join
@@ -329,6 +353,15 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         ethJoin.collateral().approve(address(ethJoin), value);
         // Joins WETH collateral into the safeEngine
         ethJoin.join(safeHandler, value);
+    }
+
+    function dai_ethJoin_join(address urn, uint value) public payable {
+        // Wraps ETH in WETH
+        dai_ethJoin.gem().deposit{value: value}();
+        // Approves adapter to take the WETH amount
+        dai_ethJoin.gem().approve(address(dai_ethJoin), value);
+        // Joins WETH collateral into the vat
+        dai_ethJoin.join(urn, value);
     }
 
     /// @notice Modify a SAFE's collateralization ratio while keeping the generated COIN or collateral freed in the SAFE handler address.
@@ -376,6 +409,27 @@ contract LazyArb is ReentrancyGuardUpgradeable {
             deltaDebt = multiply(uint(deltaDebt), rate) < multiply(wad, RAY)
                 ? deltaDebt + 1
                 : deltaDebt;
+        }
+    }
+
+    function _getDrawDart(
+        address vat,
+        address urn,
+        bytes32 ilk,
+        uint wad
+    ) internal returns (int dart) {
+        // Updates stability fee rate
+        uint rate = dai_jug.drip(ilk);
+
+        // Gets DAI balance of the urn in the vat
+        uint dai = VatLike(vat).dai(urn);
+
+        // If there was already enough DAI in the vat balance, just exits it without adding more debt
+        if (dai < multiply(wad, RAY)) {
+            // Calculates the needed dart so together with the existing dai in the vat is enough to exit wad amount of DAI tokens
+            dart = toInt(subtract(multiply(wad, RAY), dai) / rate);
+            // This is neeeded due lack of precision. It might need to sum an extra dart wei (for the given DAI wad amount)
+            dart = multiply(uint(dart), rate) < multiply(wad, RAY) ? dart + 1 : dart;
         }
     }
 
