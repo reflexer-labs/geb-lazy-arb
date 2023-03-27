@@ -14,8 +14,7 @@ contract LazyArbTest is Test {
     UpgradeableBeacon public beacon;
     BeaconProxy public proxy;
     LazyArb public lazyArb;
-    AaveConnector public connector1;
-    CurveConnector public connector2;
+    CurveConnector public connector;
 
     address public user = address(0x1);
     address public safeManager =
@@ -29,8 +28,10 @@ contract LazyArbTest is Test {
     address public dai_daiJoin = address(0x9759A6Ac90977b93B58547b4A71c78317f391A28);
     address public oracle = address(0x4ed9C0dCa0479bC64d8f4EB3007126D5791f7851);
     address public RAI = address(0x03ab458634910AaD20eF5f1C8ee96F1D6ac54919);
+    address public DAI = address(0x6B175474E89094C44Da98b954EedeAC495271d0F);
     address public AaveLendigPool = address(0x7d2768dE32b0b80b7a3454c06BdAc94A69DDc7A9);
-    address public CurvePool = address(0x618788357D0EBd8A37e763ADab3bc575D54c2C7d);
+    address public CurvePool = address(0xbEbc44782C7dB0a1A60Cb6fe97d0b483032FF1C7);
+    address public CurveLP = address(0x6c3F90f043a72FA612cbac8115EE7e52BDe6E490);
 
     function setUp() public {
         implementation = new LazyArb();
@@ -52,8 +53,7 @@ contract LazyArbTest is Test {
         );
         lazyArb = LazyArb(payable(address(proxy)));
 
-        connector1 = new AaveConnector(RAI, AaveLendigPool);
-        connector2 = new CurveConnector(RAI, CurvePool);
+        connector = new CurveConnector(DAI, CurvePool, CurveLP);
     }
 
     function depositETH(uint256 depositAmount) public returns (bool) {
@@ -75,7 +75,7 @@ contract LazyArbTest is Test {
     function testLockETHAndGenerateDebt() public {
         startHoax(user);
         this.depositETH(10 ether);
-        lazyArb.lockETHAndGenerateDebt(4000 * 1e18, 10000 * 1e18, address(connector2));
+        lazyArb.lockETHAndGenerateDebt(4000 * 1e18, 10000 * 1e18, address(connector));
         vm.stopPrank();
     }
 }

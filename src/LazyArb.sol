@@ -319,7 +319,10 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         IConnector(connector).deposit(daiBalance);
     }
 
-    function lockETHAndDraw(uint wadD) external {
+    function lockETHAndDraw(
+        uint wadD,
+        address connector
+    ) external {
         require(
             oracleRelayer.redemptionRate() > RAY,
             "LazyArb/redemption-rate-positive"
@@ -341,6 +344,11 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         }
         // Exits DAI to the user's wallet as a token
         dai_daiJoin.exit(msg.sender, wadD);
+
+        uint256 daiBalance = DAI.balanceOf(address(this));
+        DAI.approve(connector, daiBalance);
+
+        IConnector(connector).deposit(daiBalance);
     }
 
     /// @notice Joins the system with the a specified value
