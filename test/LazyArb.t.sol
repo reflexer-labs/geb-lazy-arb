@@ -8,6 +8,7 @@ import "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
 import "../src/LazyArb.sol";
 import "../src/connectors/AaveConnector.sol";
 import "../src/connectors/CurveConnector.sol";
+import "../src/mock/MockOracle.sol";
 
 contract LazyArbTest is Test {
     LazyArb public implementation;
@@ -15,6 +16,7 @@ contract LazyArbTest is Test {
     BeaconProxy public proxy;
     LazyArb public lazyArb;
     CurveConnector public connector;
+    MockOracle public mockOracle;
 
     address public user = address(0x1);
     address public safeManager =
@@ -34,6 +36,9 @@ contract LazyArbTest is Test {
     address public CurveLP = address(0x6c3F90f043a72FA612cbac8115EE7e52BDe6E490);
 
     function setUp() public {
+        mockOracle = new MockOracle();
+        mockOracle.setRedemptionRate(1e27);
+
         implementation = new LazyArb();
         beacon = new UpgradeableBeacon(address(implementation));
         proxy = new BeaconProxy(
@@ -48,7 +53,7 @@ contract LazyArbTest is Test {
                 dai_jug,
                 dai_ethJoin,
                 dai_daiJoin,
-                oracle
+                address(mockOracle)
             )
         );
         lazyArb = LazyArb(payable(address(proxy)));
@@ -61,8 +66,9 @@ contract LazyArbTest is Test {
     }
 
     function testRedemptionRate() public {
+        mockOracle.setRedemptionRate(1.0001e27);
         uint256 redemptionRate = lazyArb.redemptionRate();
-        assertEq(redemptionRate, OracleRelayerLike(oracle).redemptionRate());
+        assertEq(redemptionRate, 1.0001e27);
     }
 
     function testDepositETH() public {
@@ -75,7 +81,16 @@ contract LazyArbTest is Test {
     function testLockETHAndGenerateDebt() public {
         startHoax(user);
         this.depositETH(10 ether);
-        lazyArb.lockETHAndGenerateDebt(4000 * 1e18, 10000 * 1e18, address(connector));
+        mockOracle.setRedemptionRate(0.998e27);
+        lazyArb.lockETHAndGenerateDebt(4500 * 1e18, 8000 * 1e18, address(connector));
+        vm.stopPrank();
+    }
+
+    function testLockETHAndDraw() public {
+        startHoax(user);
+        this.depositETH(10 ether);
+        mockOracle.setRedemptionRate(1.002e27);
+        lazyArb.lockETHAndDraw(8000 * 1e18, address(connector));
         vm.stopPrank();
     }
 }

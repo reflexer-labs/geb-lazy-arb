@@ -343,7 +343,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
             VatLike(vat).hope(address(dai_daiJoin));
         }
         // Exits DAI to the user's wallet as a token
-        dai_daiJoin.exit(msg.sender, wadD);
+        dai_daiJoin.exit(address(this), wadD);
 
         uint256 daiBalance = DAI.balanceOf(address(this));
         DAI.approve(connector, daiBalance);
