@@ -319,6 +319,29 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         IConnector(connector).deposit(daiBalance);
     }
 
+    /// @notice Repays debt and frees ETH (sends it to msg.sender)
+    /// @param collateralWad uint - Amount of collateral to free
+    /// @param deltaWad uint - Amount of debt to repay
+    function repayDebtAndFreeETH(
+        uint collateralWad,
+        uint deltaWad
+    ) external {
+        address safeHandler = safeManager.safes(safe);
+        // Joins COIN amount into the safeEngine
+        _coinJoin_join(safeHandler, deltaWad);
+        // Paybacks debt to the SAFE and unlocks WETH amount from it
+        modifySAFECollateralization(
+            -toInt(collateralWad),
+            _getRepaidDeltaDebt(safeEngine.coinBalance(safeHandler), safeHandler, safeManager.collateralTypes(safe))
+        );
+        // Moves the amount from the SAFE handler to proxy's address
+        transferCollateral(address(this), collateralWad);
+        // Exits WETH amount to proxy address as a token
+        CollateralJoinLike(ethJoin).exit(address(this), collateralWad);
+        // Converts WETH to ETH
+        CollateralJoinLike(ethJoin).collateral().withdraw(collateralWad);
+    }
+
     function lockETHAndDraw(
         uint wadD,
         address connector
@@ -386,11 +409,28 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         );
     }
 
+    /// @notice Transfer wad amount of safe collateral from the safe address to a dst address.
+    /// @param dst address - destination address
+    /// uint wad - amount
+    function transferCollateral(
+        address dst,
+        uint wad
+    ) public {
+        safeManager.transferCollateral(safe, dst, wad);
+    }
+
     /// @notice Transfer rad amount of COIN from the safe address to a dst address.
     /// @param dst address - destination address
     /// uint rad - amount
     function transferInternalCoins(address dst, uint rad) internal {
         safeManager.transferInternalCoins(safe, dst, rad);
+    }
+
+    function _coinJoin_join(address safeHandler, uint wad) internal {
+        // Approves adapter to take the COIN amount
+        coinJoin.systemCoin().approve(address(coinJoin), wad);
+        // Joins COIN into the safeEngine
+        coinJoin.join(safeHandler, wad);
     }
 
     /// @notice Gets delta debt generated (Total Safe debt minus available safeHandler COIN balance)
@@ -418,6 +458,29 @@ contract LazyArb is ReentrancyGuardUpgradeable {
                 ? deltaDebt + 1
                 : deltaDebt;
         }
+    }
+
+    /// @notice Gets repaid delta debt generated (rate adjusted debt)
+    /// @param coin uint amount
+    /// @param safeHandler address
+    /// @param collateralType bytes32
+        /// @return deltaDebt
+    function _getRepaidDeltaDebt(
+        uint coin,
+        address safeHandler,
+        bytes32 collateralType
+    ) internal view returns (int deltaDebt) {
+        // Gets actual rate from the safeEngine
+        (, uint rate,,,,) = safeEngine.collateralTypes(collateralType);
+        require(rate > 0, "invalid-collateral-type");
+
+        // Gets actual generatedDebt value of the safe
+        (, uint generatedDebt) = safeEngine.safes(collateralType, safeHandler);
+
+        // Uses the whole coin balance in the safeEngine to reduce the debt
+        deltaDebt = toInt(coin / rate);
+        // Checks the calculated deltaDebt is not higher than safe.generatedDebt (total debt), otherwise uses its value
+        deltaDebt = uint(deltaDebt) <= generatedDebt ? - deltaDebt : - toInt(generatedDebt);
     }
 
     function _getDrawDart(
