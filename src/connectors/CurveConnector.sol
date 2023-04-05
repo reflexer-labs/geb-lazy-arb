@@ -45,6 +45,14 @@ contract CurveConnector is IConnector {
     }
 
     function withdraw(uint256 lpTokenAmount) external override {
+        _withdraw(lpTokenAmount);
+    }
+
+    function withdrawAll() external override {
+        _withdraw(IERC20(lpToken).balanceOf(msg.sender));
+    }
+
+    function _withdraw(uint256 lpTokenAmount) internal {
         IERC20(lpToken).safeTransferFrom(
             msg.sender,
             address(this),
@@ -54,6 +62,10 @@ contract CurveConnector is IConnector {
             lpTokenAmount,
             int128(uint128(_tokenIndex)),
             0
+        );
+        IERC20(underlying).safeTransfer(
+            msg.sender,
+            IERC20(underlying).balanceOf(address(this))
         );
     }
 }

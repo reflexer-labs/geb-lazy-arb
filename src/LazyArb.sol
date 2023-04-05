@@ -4,7 +4,9 @@ pragma solidity 0.8.17;
 import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 import "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
+import "@uniswap/v3-periphery/contracts/interfaces/IQuoter.sol";
 import "./interface/IConnector.sol";
+import "forge-std/console.sol";
 
 abstract contract CollateralLike {
     function approve(address, uint) public virtual;
@@ -186,6 +188,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
     uint256 private constant RAY = 10 ** 27;
     ISwapRouter private constant uniswapV3Router =
         ISwapRouter(0xE592427A0AEce92De3Edee1F18E0157C05861564);
+    IQuoter private constant uniswapV3Quoter = IQuoter(0xb27308f9F90D607463bb33eA1BeBb41C27CE5AB6);
     IERC20Upgradeable private constant DAI = IERC20Upgradeable(0x6B175474E89094C44Da98b954EedeAC495271d0F);
 
     ManagerLike public safeManager;
@@ -298,20 +301,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         coinJoin.exit(address(this), deltaWad);
 
         uint256 systemCoinBalance = systemCoin.balanceOf(address(this));
-        systemCoin.approve(address(uniswapV3Router), systemCoinBalance);
-
-        uniswapV3Router.exactInputSingle(
-            ISwapRouter.ExactInputSingleParams({
-                tokenIn: address(systemCoin),
-                tokenOut: address(DAI),
-                fee: uint24(500),
-                recipient: address(this),
-                deadline: block.timestamp,
-                amountIn: systemCoinBalance,
-                amountOutMinimum: minDaiAmount,
-                sqrtPriceLimitX96: 0
-            })
-        );
+        uniswapSwap(address(systemCoin), address(DAI), systemCoinBalance, minDaiAmount);
 
         uint256 daiBalance = DAI.balanceOf(address(this));
         DAI.approve(connector, daiBalance);
@@ -321,18 +311,59 @@ contract LazyArb is ReentrancyGuardUpgradeable {
 
     /// @notice Repays debt and frees ETH (sends it to msg.sender)
     /// @param collateralWad uint - Amount of collateral to free
-    /// @param deltaWad uint - Amount of debt to repay
+    /// @param minRaiAmount uint - Minimum RAI amount expect in swap
+    /// @param connectors address[] - List of connectors
     function repayDebtAndFreeETH(
         uint collateralWad,
-        uint deltaWad
+        uint minRaiAmount,
+        address[] calldata connectors
     ) external {
+        uint length = connectors.length;
+        for (uint i; i != length; ++i) {
+            IConnector connector = IConnector(connectors[i]);
+            IERC20Upgradeable lpToken = IERC20Upgradeable(connector.lpToken());
+            uint lpTokenBalance = lpToken.balanceOf(address(this));
+            lpToken.approve(address(connector), lpTokenBalance);
+            connector.withdrawAll();
+        }
+
+        uint256 daiBalance = DAI.balanceOf(address(this));
+        uniswapSwap(address(DAI), address(systemCoin), daiBalance, minRaiAmount);
+
+        uint256 raiBalance = systemCoin.balanceOf(address(this));
+
         address safeHandler = safeManager.safes(safe);
+        bytes32 collateralType = safeManager.collateralTypes(safe);
+        uint256 raiDebtAmount = _getRepaidAllDebt(safeHandler, safeHandler, collateralType);
+        if (raiBalance < raiDebtAmount) {
+            uint256 missingRaiAmount = raiDebtAmount - raiBalance;
+            address WETH = address(CollateralJoinLike(ethJoin).collateral());
+            uint256 requiredETHAmount = uniswapV3Quoter.quoteExactOutputSingle(
+                WETH,
+                address(systemCoin),
+                uint24(500),
+                missingRaiAmount,
+                0
+            );
+            modifySAFECollateralization(
+                -toInt(requiredETHAmount),
+                0
+            );
+            // Moves the amount from the SAFE handler to proxy's address
+            transferCollateral(address(this), requiredETHAmount);
+            // Exits WETH amount to proxy address as a token
+            CollateralJoinLike(ethJoin).exit(address(this), requiredETHAmount);
+            // Swap WETH to RAI
+            uniswapSwap(WETH, address(systemCoin), requiredETHAmount, missingRaiAmount);
+        }
+
+        (, uint generatedDebt) = safeEngine.safes(collateralType, safeHandler);
         // Joins COIN amount into the safeEngine
-        _coinJoin_join(safeHandler, deltaWad);
+        _coinJoin_join(safeHandler, _getRepaidAllDebt(safeHandler, safeHandler, collateralType));
         // Paybacks debt to the SAFE and unlocks WETH amount from it
         modifySAFECollateralization(
             -toInt(collateralWad),
-            _getRepaidDeltaDebt(safeEngine.coinBalance(safeHandler), safeHandler, safeManager.collateralTypes(safe))
+            -int(generatedDebt)
         );
         // Moves the amount from the SAFE handler to proxy's address
         transferCollateral(address(this), collateralWad);
@@ -372,6 +403,22 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         DAI.approve(connector, daiBalance);
 
         IConnector(connector).deposit(daiBalance);
+    }
+
+    function uniswapSwap(address tokenIn, address tokenOut, uint amountIn, uint amountOutMin) internal {
+        IERC20Upgradeable(tokenIn).approve(address(uniswapV3Router), amountIn);
+        uniswapV3Router.exactInputSingle(
+            ISwapRouter.ExactInputSingleParams({
+                tokenIn: tokenIn,
+                tokenOut: tokenOut,
+                fee: uint24(500),
+                recipient: address(this),
+                deadline: block.timestamp,
+                amountIn: amountIn,
+                amountOutMinimum: amountOutMin,
+                sqrtPriceLimitX96: 0
+            })
+        );
     }
 
     /// @notice Joins the system with the a specified value
@@ -483,6 +530,30 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         deltaDebt = uint(deltaDebt) <= generatedDebt ? - deltaDebt : - toInt(generatedDebt);
     }
 
+    /// @notice Gets repaid debt (rate adjusted rate minus COIN balance available in usr's address)
+    /// @param usr address
+    /// @param safeHandler address
+    /// @param collateralType address
+    /// @return wad
+    function _getRepaidAllDebt(
+        address usr,
+        address safeHandler,
+        bytes32 collateralType
+    ) internal view returns (uint wad) {
+        // Gets actual rate from the safeEngine
+        (, uint rate,,,,) = safeEngine.collateralTypes(collateralType);
+        // Gets actual generatedDebt value of the safe
+        (, uint generatedDebt) = safeEngine.safes(collateralType, safeHandler);
+        // Gets actual coin amount in the safe
+        uint coin = safeEngine.coinBalance(usr);
+
+        uint rad = subtract(multiply(generatedDebt, rate), coin);
+        wad = rad / RAY;
+
+        // If the rad precision has some dust, it will need to request for 1 extra wad wei
+        wad = multiply(wad, RAY) < rad ? wad + 1 : wad;
+    }
+
     function _getDrawDart(
         address vat,
         address urn,
@@ -525,4 +596,6 @@ contract LazyArb is ReentrancyGuardUpgradeable {
     function toRad(uint wad) internal pure returns (uint rad) {
         rad = multiply(wad, 10 ** 27);
     }
+
+    receive() external payable {}
 }

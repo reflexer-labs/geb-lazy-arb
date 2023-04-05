@@ -26,11 +26,23 @@ contract AaveConnector is IConnector {
     }
 
     function withdraw(uint256 lpTokenAmount) external override {
+        _withdraw(lpTokenAmount);
+    }
+
+    function withdrawAll() external override {
+        _withdraw(IERC20(lpToken).balanceOf(msg.sender));
+    }
+
+    function _withdraw(uint256 lpTokenAmount) internal {
         IERC20(lpToken).safeTransferFrom(
             msg.sender,
             address(this),
             lpTokenAmount
         );
         pool.withdraw(underlying, type(uint256).max, msg.sender);
+        IERC20(underlying).safeTransfer(
+            msg.sender,
+            IERC20(underlying).balanceOf(address(this))
+        );
     }
 }
