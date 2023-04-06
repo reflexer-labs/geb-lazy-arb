@@ -6,7 +6,6 @@ import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 import "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
 import "@uniswap/v3-periphery/contracts/interfaces/IQuoter.sol";
 import "./interface/IConnector.sol";
-import "forge-std/console.sol";
 
 abstract contract CollateralLike {
     function approve(address, uint) public virtual;
@@ -337,7 +336,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         uint256 raiDebtAmount = _getRepaidAllDebt(safeHandler, safeHandler, collateralType);
         if (raiBalance < raiDebtAmount) {
             uint256 missingRaiAmount = raiDebtAmount - raiBalance;
-            address WETH = address(CollateralJoinLike(ethJoin).collateral());
+            address WETH = address(ethJoin.collateral());
             uint256 requiredETHAmount = uniswapV3Quoter.quoteExactOutputSingle(
                 WETH,
                 address(systemCoin),
@@ -352,14 +351,14 @@ contract LazyArb is ReentrancyGuardUpgradeable {
             // Moves the amount from the SAFE handler to proxy's address
             transferCollateral(address(this), requiredETHAmount);
             // Exits WETH amount to proxy address as a token
-            CollateralJoinLike(ethJoin).exit(address(this), requiredETHAmount);
+            ethJoin.exit(address(this), requiredETHAmount);
             // Swap WETH to RAI
             uniswapSwap(WETH, address(systemCoin), requiredETHAmount, missingRaiAmount);
         }
 
         (, uint generatedDebt) = safeEngine.safes(collateralType, safeHandler);
         // Joins COIN amount into the safeEngine
-        _coinJoin_join(safeHandler, _getRepaidAllDebt(safeHandler, safeHandler, collateralType));
+        _coinJoin_join(safeHandler, raiDebtAmount);
         // Paybacks debt to the SAFE and unlocks WETH amount from it
         modifySAFECollateralization(
             -toInt(collateralWad),
@@ -368,9 +367,9 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         // Moves the amount from the SAFE handler to proxy's address
         transferCollateral(address(this), collateralWad);
         // Exits WETH amount to proxy address as a token
-        CollateralJoinLike(ethJoin).exit(address(this), collateralWad);
+        ethJoin.exit(address(this), collateralWad);
         // Converts WETH to ETH
-        CollateralJoinLike(ethJoin).collateral().withdraw(collateralWad);
+        ethJoin.collateral().withdraw(collateralWad);
     }
 
     function lockETHAndDraw(
@@ -403,6 +402,65 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         DAI.approve(connector, daiBalance);
 
         IConnector(connector).deposit(daiBalance);
+    }
+
+    function wipeAndFreeETH(
+        uint wadC,
+        address[] calldata connectors
+    ) external {
+        uint length = connectors.length;
+        for (uint i; i != length; ++i) {
+            IConnector connector = IConnector(connectors[i]);
+            IERC20Upgradeable lpToken = IERC20Upgradeable(connector.lpToken());
+            uint lpTokenBalance = lpToken.balanceOf(address(this));
+            lpToken.approve(address(connector), lpTokenBalance);
+            connector.withdrawAll();
+        }
+
+        uint256 daiBalance = DAI.balanceOf(address(this));
+
+        address vat = dai_manager.vat();
+        address urn = dai_manager.urns(cdp);
+        bytes32 ilk = dai_manager.ilks(cdp);
+        (, uint art) = VatLike(vat).urns(ilk, urn);
+        uint256 daiDebtAmount = _getWipeAllWad(vat, urn, urn, ilk);
+        if (daiBalance < daiDebtAmount) {
+            uint256 missingDaiAmount = daiDebtAmount - daiBalance;
+            address WETH = address(dai_ethJoin.gem());
+            uint256 requiredETHAmount = uniswapV3Quoter.quoteExactOutputSingle(
+                WETH,
+                address(DAI),
+                uint24(500),
+                missingDaiAmount,
+                0
+            );
+            dai_manager.frob(
+                cdp,
+                -toInt(requiredETHAmount),
+                0
+            );
+            // Moves the amount from the SAFE handler to proxy's address
+            dai_manager.flux(cdp, address(this), requiredETHAmount);
+            // Exits WETH amount to proxy address as a token
+            dai_ethJoin.exit(address(this), requiredETHAmount);
+            // Swap WETH to DAI
+            uniswapSwap(WETH, address(DAI), requiredETHAmount, missingDaiAmount);
+        }
+
+        // Joins DAI amount into the vat
+        _daiJoin_join(urn, daiDebtAmount);
+        // Paybacks debt to the CDP and unlocks WETH amount from it
+        dai_manager.frob(
+            cdp,
+            -toInt(wadC),
+            -int(art)
+        );
+        // Moves the amount from the CDP urn to proxy's address
+        dai_manager.flux(cdp, address(this), wadC);
+        // Exits WETH amount to proxy address as a token
+        dai_ethJoin.exit(address(this), wadC);
+        // Converts WETH to ETH
+        dai_ethJoin.gem().withdraw(wadC);
     }
 
     function uniswapSwap(address tokenIn, address tokenOut, uint amountIn, uint amountOutMin) internal {
@@ -478,6 +536,13 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         coinJoin.systemCoin().approve(address(coinJoin), wad);
         // Joins COIN into the safeEngine
         coinJoin.join(safeHandler, wad);
+    }
+
+    function _daiJoin_join(address urn, uint wad) public {
+        // Approves adapter to take the DAI amount
+        dai_daiJoin.dai().approve(address(dai_daiJoin), wad);
+        // Joins DAI into the vat
+        dai_daiJoin.join(urn, wad);
     }
 
     /// @notice Gets delta debt generated (Total Safe debt minus available safeHandler COIN balance)
@@ -573,6 +638,26 @@ contract LazyArb is ReentrancyGuardUpgradeable {
             // This is neeeded due lack of precision. It might need to sum an extra dart wei (for the given DAI wad amount)
             dart = multiply(uint(dart), rate) < multiply(wad, RAY) ? dart + 1 : dart;
         }
+    }
+
+    function _getWipeAllWad(
+        address vat,
+        address usr,
+        address urn,
+        bytes32 ilk
+    ) internal view returns (uint wad) {
+        // Gets actual rate from the vat
+        (, uint rate,,,) = VatLike(vat).ilks(ilk);
+        // Gets actual art value of the urn
+        (, uint art) = VatLike(vat).urns(ilk, urn);
+        // Gets actual dai amount in the urn
+        uint dai = VatLike(vat).dai(usr);
+
+        uint rad = subtract(multiply(art, rate), dai);
+        wad = rad / RAY;
+
+        // If the rad precision has some dust, it will need to request for 1 extra wad wei
+        wad = multiply(wad, RAY) < rad ? wad + 1 : wad;
     }
 
     function multiply(uint x, uint y) internal pure returns (uint z) {

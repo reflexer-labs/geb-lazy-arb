@@ -108,4 +108,19 @@ contract LazyArbTest is Test {
         lazyArb.lockETHAndDraw(8000 * 1e18, address(connector));
         vm.stopPrank();
     }
+
+    function testWipeAndFreeETH() public {
+        startHoax(user);
+        this.depositETH(10 ether);
+        mockOracle.setRedemptionRate(1.002e27);
+        lazyArb.lockETHAndDraw(8000 * 1e18, address(connector));
+
+        skip(10 days);
+
+        address[] memory connectors = new address[](1);
+        connectors[0] = address(connector);
+        lazyArb.wipeAndFreeETH(5 ether, connectors);
+
+        vm.stopPrank();
+    }
 }
