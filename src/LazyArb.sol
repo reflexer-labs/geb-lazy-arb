@@ -412,19 +412,26 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         dai_ethJoin_join(urn, collateralBalance);
         // Locks WETH amount into the CDP and generates debt
         dai_manager.frob(cdp, toInt(collateralBalance), _getDrawDart(vat, urn, ilk, wadD));
-        // Moves the DAI amount (balance in the vat in rad) to proxy's address
-        dai_manager.move(cdp, address(this), toRad(wadD));
-        // Allows adapter to access to proxy's DAI balance in the vat
-        if (VatLike(vat).can(address(this), address(dai_daiJoin)) == 0) {
-            VatLike(vat).hope(address(dai_daiJoin));
-        }
-        // Exits DAI to the user's wallet as a token
-        dai_daiJoin.exit(address(this), wadD);
+        
+        exitDai(wadD);
+        depositDai(connector);
+    }
 
-        uint256 daiBalance = DAI.balanceOf(address(this));
-        DAI.approve(connector, daiBalance);
+    function rebalanceLong(
+        uint wadD,
+        address connector
+    ) external {
+        require(status == Status.Long, "LazyArb/status-not-long");
 
-        IConnector(connector).deposit(daiBalance);
+        address urn = dai_manager.urns(cdp);
+        address vat = dai_manager.vat();
+        bytes32 ilk = dai_manager.ilks(cdp);
+
+        // Generates debt
+        dai_manager.frob(cdp, 0, _getDrawDart(vat, urn, ilk, wadD));
+
+        exitDai(wadD);
+        depositDai(connector);
     }
 
     function wipeAndFreeETH(
@@ -504,6 +511,19 @@ contract LazyArb is ReentrancyGuardUpgradeable {
 
         uint256 systemCoinBalance = systemCoin.balanceOf(address(this));
         uniswapSwap(address(systemCoin), address(DAI), systemCoinBalance, minDaiAmount);
+    }
+
+    function exitDai(uint wadD) internal {
+        address vat = dai_manager.vat();
+
+        // Moves the DAI amount (balance in the vat in rad) to proxy's address
+        dai_manager.move(cdp, address(this), toRad(wadD));
+        // Allows adapter to access to proxy's DAI balance in the vat
+        if (VatLike(vat).can(address(this), address(dai_daiJoin)) == 0) {
+            VatLike(vat).hope(address(dai_daiJoin));
+        }
+        // Exits DAI to the user's wallet as a token
+        dai_daiJoin.exit(address(this), wadD);
     }
 
     function depositDai(address connector) internal {
