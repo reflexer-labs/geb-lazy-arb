@@ -300,22 +300,29 @@ contract LazyArb is ReentrancyGuardUpgradeable {
             toInt(collateralBalance),
             _getGeneratedDeltaDebt(safeHandler, collateralType, deltaWad)
         );
-        // Moves the COIN amount (balance in the safeEngine in rad) to proxy's address
-        transferInternalCoins(address(this), toRad(deltaWad));
-        // Allows adapter to access to proxy's COIN balance in the safeEngine
-        if (safeEngine.canModifySAFE(address(this), address(coinJoin)) == 0) {
-            safeEngine.approveSAFEModification(address(coinJoin));
-        }
-        // Exits COIN as a token
-        coinJoin.exit(address(this), deltaWad);
 
-        uint256 systemCoinBalance = systemCoin.balanceOf(address(this));
-        uniswapSwap(address(systemCoin), address(DAI), systemCoinBalance, minDaiAmount);
+        exitRaiAndConvertToDai(deltaWad, minDaiAmount);
+        depositDai(connector);
+    }
 
-        uint256 daiBalance = DAI.balanceOf(address(this));
-        DAI.approve(connector, daiBalance);
+    function rebalanceShort(
+        uint256 deltaWad,
+        uint256 minDaiAmount,
+        address connector
+    ) external {
+        require(status == Status.Short, "LazyArb/status-not-short");
 
-        IConnector(connector).deposit(daiBalance);
+        address safeHandler = safeManager.safes(safe);
+        bytes32 collateralType = safeManager.collateralTypes(safe);
+
+        // Generates debt
+        modifySAFECollateralization(
+            0,
+            _getGeneratedDeltaDebt(safeHandler, collateralType, deltaWad)
+        );
+
+        exitRaiAndConvertToDai(deltaWad, minDaiAmount);
+        depositDai(connector);
     }
 
     /// @notice Repays debt and frees ETH (sends it to msg.sender)
@@ -480,6 +487,30 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         dai_ethJoin.exit(address(this), wadC);
         // Converts WETH to ETH
         dai_ethJoin.gem().withdraw(wadC);
+    }
+
+    function exitRaiAndConvertToDai(
+        uint256 deltaWad,
+        uint256 minDaiAmount
+    ) internal {
+        // Moves the COIN amount (balance in the safeEngine in rad) to proxy's address
+        transferInternalCoins(address(this), toRad(deltaWad));
+        // Allows adapter to access to proxy's COIN balance in the safeEngine
+        if (safeEngine.canModifySAFE(address(this), address(coinJoin)) == 0) {
+            safeEngine.approveSAFEModification(address(coinJoin));
+        }
+        // Exits COIN as a token
+        coinJoin.exit(address(this), deltaWad);
+
+        uint256 systemCoinBalance = systemCoin.balanceOf(address(this));
+        uniswapSwap(address(systemCoin), address(DAI), systemCoinBalance, minDaiAmount);
+    }
+
+    function depositDai(address connector) internal {
+        uint256 daiBalance = DAI.balanceOf(address(this));
+        DAI.approve(connector, daiBalance);
+
+        IConnector(connector).deposit(daiBalance);
     }
 
     function uniswapSwap(address tokenIn, address tokenOut, uint amountIn, uint amountOutMin) internal {
