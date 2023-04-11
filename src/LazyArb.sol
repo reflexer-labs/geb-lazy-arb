@@ -184,6 +184,12 @@ interface JugLike {
 }
 
 contract LazyArb is ReentrancyGuardUpgradeable {
+    enum Status {
+        None,
+        Short,
+        Long
+    }
+
     uint256 private constant RAY = 10 ** 27;
     ISwapRouter private constant uniswapV3Router =
         ISwapRouter(0xE592427A0AEce92De3Edee1F18E0157C05861564);
@@ -204,6 +210,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
 
     uint256 public safe;
     uint256 public cdp;
+    Status public status;
 
     /// @notice Initialize LazyArb contract
     /// @param safeManager_ address
@@ -279,6 +286,9 @@ contract LazyArb is ReentrancyGuardUpgradeable {
             "LazyArb/redemption-rate-positive"
         );
 
+        require(status != Status.Long, "LazyArb/status-long");
+        status = Status.Short;
+
         address safeHandler = safeManager.safes(safe);
         bytes32 collateralType = safeManager.collateralTypes(safe);
 
@@ -317,6 +327,9 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         uint minRaiAmount,
         address[] calldata connectors
     ) external {
+        require(status == Status.Short, "LazyArb/status-not-short");
+        status = Status.None;
+
         uint length = connectors.length;
         for (uint i; i != length; ++i) {
             IConnector connector = IConnector(connectors[i]);
@@ -381,6 +394,9 @@ contract LazyArb is ReentrancyGuardUpgradeable {
             "LazyArb/redemption-rate-positive"
         );
 
+        require(status != Status.Short, "LazyArb/status-short");
+        status = Status.Long;
+
         address urn = dai_manager.urns(cdp);
         address vat = dai_manager.vat();
         bytes32 ilk = dai_manager.ilks(cdp);
@@ -408,6 +424,9 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         uint wadC,
         address[] calldata connectors
     ) external {
+        require(status == Status.Long, "LazyArb/status-not-long");
+        status = Status.None;
+
         uint length = connectors.length;
         for (uint i; i != length; ++i) {
             IConnector connector = IConnector(connectors[i]);
