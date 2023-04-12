@@ -44,7 +44,12 @@ contract CurveConnector is IConnector {
         );
     }
 
-    function withdraw(uint256 lpTokenAmount) external override {
+    function withdraw(uint256 underlyingAmount) external override {
+        uint256 amount = pool.calc_withdraw_one_coin(1 ether, int128(uint128(_tokenIndex)));
+        _withdraw(1 ether * underlyingAmount / amount);
+    }
+
+    function redeem(uint256 lpTokenAmount) external override {
         _withdraw(lpTokenAmount);
     }
 

@@ -306,23 +306,47 @@ contract LazyArb is ReentrancyGuardUpgradeable {
     }
 
     function rebalanceShort(
-        uint256 deltaWad,
-        uint256 minDaiAmount,
+        int256 deltaWad,
+        uint256 minAmount,
         address connector
     ) external {
         require(status == Status.Short, "LazyArb/status-not-short");
 
         address safeHandler = safeManager.safes(safe);
         bytes32 collateralType = safeManager.collateralTypes(safe);
+        if (deltaWad > 0) {
+            // Generates debt
+            modifySAFECollateralization(
+                0,
+                _getGeneratedDeltaDebt(safeHandler, collateralType, uint256(deltaWad))
+            );
 
-        // Generates debt
-        modifySAFECollateralization(
-            0,
-            _getGeneratedDeltaDebt(safeHandler, collateralType, deltaWad)
-        );
+            exitRaiAndConvertToDai(uint256(deltaWad), minAmount);
+            depositDai(connector);
+        } else {
+            uint256 requiredDAIAmount = uniswapV3Quoter.quoteExactOutputSingle(
+                address(DAI),
+                address(systemCoin),
+                uint24(500),
+                uint256(-deltaWad),
+                0
+            );
 
-        exitRaiAndConvertToDai(deltaWad, minDaiAmount);
-        depositDai(connector);
+            IERC20Upgradeable lpToken = IERC20Upgradeable(IConnector(connector).lpToken());
+            uint lpTokenBalance = lpToken.balanceOf(address(this));
+            lpToken.approve(connector, lpTokenBalance);
+            IConnector(connector).withdraw(requiredDAIAmount);
+
+            uniswapSwap(address(DAI), address(systemCoin), requiredDAIAmount, minAmount);
+
+            uint256 raiBalance = systemCoin.balanceOf(address(this));
+            _coinJoin_join(safeHandler, raiBalance);
+            // Paybacks debt to the SAFE and unlocks WETH amount from it
+            modifySAFECollateralization(
+                0,
+                -_getGeneratedDeltaDebt(safeHandler, collateralType, uint256(-deltaWad))
+            );
+        }
     }
 
     /// @notice Repays debt and frees ETH (sends it to msg.sender)
@@ -418,7 +442,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
     }
 
     function rebalanceLong(
-        uint wadD,
+        int wadD,
         address connector
     ) external {
         require(status == Status.Long, "LazyArb/status-not-long");
@@ -426,12 +450,27 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         address urn = dai_manager.urns(cdp);
         address vat = dai_manager.vat();
         bytes32 ilk = dai_manager.ilks(cdp);
+        if (wadD > 0) {
+            // Generates debt
+            dai_manager.frob(cdp, 0, _getDrawDart(vat, urn, ilk, uint(wadD)));
 
-        // Generates debt
-        dai_manager.frob(cdp, 0, _getDrawDart(vat, urn, ilk, wadD));
+            exitDai(uint(wadD));
+            depositDai(connector);
+        } else {
+            IERC20Upgradeable lpToken = IERC20Upgradeable(IConnector(connector).lpToken());
+            uint lpTokenBalance = lpToken.balanceOf(address(this));
+            lpToken.approve(connector, lpTokenBalance);
+            IConnector(connector).withdraw(uint(-wadD));
 
-        exitDai(wadD);
-        depositDai(connector);
+            // Joins DAI amount into the vat
+            _daiJoin_join(urn, uint(-wadD));
+            // Paybacks debt to the CDP and unlocks WETH amount from it
+            dai_manager.frob(
+                cdp,
+                0,
+                -_getDrawDart(vat, urn, ilk, uint(-wadD))
+            );
+        }
     }
 
     function wipeAndFreeETH(

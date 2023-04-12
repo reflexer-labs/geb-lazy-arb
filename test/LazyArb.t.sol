@@ -6,7 +6,6 @@ import "forge-std/Test.sol";
 import "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 import "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
 import "../src/LazyArb.sol";
-import "../src/connectors/AaveConnector.sol";
 import "../src/connectors/CurveConnector.sol";
 import "../src/mock/MockOracle.sol";
 

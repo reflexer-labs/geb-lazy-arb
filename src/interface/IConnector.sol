@@ -7,7 +7,9 @@ abstract contract IConnector {
 
     function deposit(uint256 amount) external virtual;
 
-    function withdraw(uint256 lpTokenAmount) external virtual;
+    function withdraw(uint256 underlyingAmount) external virtual;
+
+    function redeem(uint256 lpTokenAmount) external virtual;
 
     function withdrawAll() external virtual;
 }
