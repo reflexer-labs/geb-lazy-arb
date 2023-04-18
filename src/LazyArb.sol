@@ -190,6 +190,10 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         Long
     }
 
+    address public owner;
+    uint256 public cRatioMin;
+    uint256 public cRatioMax;
+
     uint256 private constant RAY = 10 ** 27;
     ISwapRouter private constant uniswapV3Router =
         ISwapRouter(0xE592427A0AEce92De3Edee1F18E0157C05861564);
@@ -212,13 +216,28 @@ contract LazyArb is ReentrancyGuardUpgradeable {
     uint256 public cdp;
     Status public status;
 
+    modifier onlyOwner {
+        require(msg.sender == owner, "LazyArb/not-owner");
+        _;
+    }
+
     /// @notice Initialize LazyArb contract
+    /// @param owner_ address
+    /// @param cRatioMin_ uint256
+    /// @param cRatioMax_ uint256
     /// @param safeManager_ address
     /// @param taxCollector_ address
     /// @param ethJoin_ address
     /// @param coinJoin_ address
+    /// @param dai_manager_ address
+    /// @param dai_jug_ address
+    /// @param dai_ethJoin_ address
+    /// @param dai_daiJoin_ address
     /// @param oracleRelayer_ address
     function initialize(
+        address owner_,
+        uint256 cRatioMin_,
+        uint256 cRatioMax_,
         address safeManager_,
         address taxCollector_,
         address ethJoin_,
@@ -229,6 +248,8 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         address dai_daiJoin_,
         address oracleRelayer_
     ) external initializer {
+        require(owner_ != address(0), "LazyArb/null-owner");
+        require(cRatioMin_ < cRatioMax_, "LazyArb/invalid-cRatio");
         require(safeManager_ != address(0), "LazyArb/null-safe-manager");
         require(taxCollector_ != address(0), "LazyArb/null-tax-collector");
         require(ethJoin_ != address(0), "LazyArb/null-eth-join");
@@ -238,6 +259,10 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         require(dai_ethJoin_ != address(0), "LazyArb/null-dai-eth-join");
         require(dai_daiJoin_ != address(0), "LazyArb/null-dai-dai-join");
         require(oracleRelayer_ != address(0), "LazyArb/null-oracle-relayer");
+
+        owner = owner_;
+        cRatioMin = cRatioMin_;
+        cRatioMax = cRatioMax_;
 
         safeManager = ManagerLike(safeManager_);
         taxCollector = TaxCollectorLike(taxCollector_);
@@ -259,6 +284,15 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         cdp = dai_manager.open("ETH-A", address(this));
 
         oracleRelayer.redemptionPrice();
+    }
+
+    /// @notice Sets cRatioMin, cRatioMax values
+    /// @param cRatioMin_ New cRatioMin value
+    /// @param cRatioMax_ New cRatioMax value
+    function setCRatio(uint256 cRatioMin_, uint256 cRatioMax_) external onlyOwner {
+        require(cRatioMin_ < cRatioMax_, "LazyArb/invalid-cRatio");
+        cRatioMin = cRatioMin_;
+        cRatioMax = cRatioMax_;
     }
 
     /// @notice Returns current redemption rate
