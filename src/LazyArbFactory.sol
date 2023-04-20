@@ -57,19 +57,15 @@ contract LazyArbFactory {
     }
 
     function createLazyArb(
-        uint256 cRatioMin_,
-        uint256 cRatioMax_
+        uint256 targetCRatio_
     ) external returns (address lazyArb) {
-        require(cRatioMin_ < cRatioMax_, "LazyArbFactory/invalid-cRatio");
-
         lazyArb = address(
             new BeaconProxy(
                 beacon,
                 abi.encodeWithSignature(
-                    "initialize(address,uint256,uint256,address,address,address,address,address,address,address,address,address)",
+                    "initialize(address,uint256,address,address,address,address,address,address,address,address,address)",
                     msg.sender,
-                    cRatioMin_,
-                    cRatioMax_,
+                    targetCRatio_,
                     safeManager,
                     taxCollector,
                     ethJoin,

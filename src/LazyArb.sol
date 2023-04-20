@@ -6,6 +6,7 @@ import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 import "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
 import "@uniswap/v3-periphery/contracts/interfaces/IQuoter.sol";
 import "./interface/IConnector.sol";
+import "forge-std/console.sol";
 
 abstract contract CollateralLike {
     function approve(address, uint) public virtual;
@@ -124,6 +125,13 @@ abstract contract OracleRelayerLike {
     function redemptionRate() public view virtual returns (uint256);
 }
 
+abstract contract PriceFeedLike {
+    function priceSource() virtual public view returns (address);
+    function read() virtual public view returns (uint256);
+    function getResultWithValidity() virtual external view returns (uint256,bool);
+}
+
+
 abstract contract TaxCollectorLike {
     function taxSingle(bytes32) public virtual returns (uint);
 }
@@ -191,10 +199,12 @@ contract LazyArb is ReentrancyGuardUpgradeable {
     }
 
     address public owner;
-    uint256 public cRatioMin;
-    uint256 public cRatioMax;
+    uint256 public targetCRatio;
 
+    uint256 public constant HUNDRED = 100;
+    uint256 public constant WAD = 10**18;
     uint256 private constant RAY = 10 ** 27;
+    uint256 public constant MAX_CRATIO = 1000;
     ISwapRouter private constant uniswapV3Router =
         ISwapRouter(0xE592427A0AEce92De3Edee1F18E0157C05861564);
     IQuoter private constant uniswapV3Quoter = IQuoter(0xb27308f9F90D607463bb33eA1BeBb41C27CE5AB6);
@@ -223,8 +233,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
 
     /// @notice Initialize LazyArb contract
     /// @param owner_ address
-    /// @param cRatioMin_ uint256
-    /// @param cRatioMax_ uint256
+    /// @param targetCRatio_ uint256
     /// @param safeManager_ address
     /// @param taxCollector_ address
     /// @param ethJoin_ address
@@ -236,8 +245,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
     /// @param oracleRelayer_ address
     function initialize(
         address owner_,
-        uint256 cRatioMin_,
-        uint256 cRatioMax_,
+        uint256 targetCRatio_,
         address safeManager_,
         address taxCollector_,
         address ethJoin_,
@@ -249,7 +257,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         address oracleRelayer_
     ) external initializer {
         require(owner_ != address(0), "LazyArb/null-owner");
-        require(cRatioMin_ < cRatioMax_, "LazyArb/invalid-cRatio");
+        require(targetCRatio_ < MAX_CRATIO, "LazyArb/invalid-targetCRatio");
         require(safeManager_ != address(0), "LazyArb/null-safe-manager");
         require(taxCollector_ != address(0), "LazyArb/null-tax-collector");
         require(ethJoin_ != address(0), "LazyArb/null-eth-join");
@@ -261,8 +269,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         require(oracleRelayer_ != address(0), "LazyArb/null-oracle-relayer");
 
         owner = owner_;
-        cRatioMin = cRatioMin_;
-        cRatioMax = cRatioMax_;
+        targetCRatio = targetCRatio_;
 
         safeManager = ManagerLike(safeManager_);
         taxCollector = TaxCollectorLike(taxCollector_);
@@ -286,13 +293,11 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         oracleRelayer.redemptionPrice();
     }
 
-    /// @notice Sets cRatioMin, cRatioMax values
-    /// @param cRatioMin_ New cRatioMin value
-    /// @param cRatioMax_ New cRatioMax value
-    function setCRatio(uint256 cRatioMin_, uint256 cRatioMax_) external onlyOwner {
-        require(cRatioMin_ < cRatioMax_, "LazyArb/invalid-cRatio");
-        cRatioMin = cRatioMin_;
-        cRatioMax = cRatioMax_;
+    /// @notice Sets targetCRatio value
+    /// @param targetCRatio_ New targetCRatio value
+    function setTargetCRatio(uint256 targetCRatio_) external onlyOwner {
+        require(targetCRatio_ < MAX_CRATIO, "LazyArb/invalid-targetCRatio");
+        targetCRatio = targetCRatio_;
     }
 
     /// @notice Returns current redemption rate
@@ -326,12 +331,28 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         address safeHandler = safeManager.safes(safe);
         bytes32 collateralType = safeManager.collateralTypes(safe);
 
+        (address ethFSM,,) = oracleRelayer.collateralTypes(collateralType);
+
+        uint256 priceFeedValue = PriceFeedLike(ethFSM).read();
+
         // Receives ETH amount, converts it to WETH and joins it into the safeEngine
         uint256 collateralBalance = address(this).balance;
         ethJoin_join(safeHandler, collateralBalance);
-        // Locks WETH amount into the SAFE and generates debt
+        // Locks WETH amount into the SAFE
         modifySAFECollateralization(
             toInt(collateralBalance),
+            0
+        );
+
+        (uint256 depositedCollateralToken, ) = safeEngine.safes(collateralType, safeHandler);
+
+        uint256 targetDebtAmount = mul(
+            mul(HUNDRED, mul(depositedCollateralToken, priceFeedValue) / WAD) / targetCRatio, RAY
+        ) / oracleRelayer.redemptionPrice();
+
+        // Generates debt
+        modifySAFECollateralization(
+            0,
             _getGeneratedDeltaDebt(safeHandler, collateralType, deltaWad)
         );
 
@@ -705,11 +726,11 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         uint coin = safeEngine.coinBalance(safeHandler);
 
         // If there was already enough COIN in the safeEngine balance, just exits it without adding more debt
-        if (coin < multiply(wad, RAY)) {
+        if (coin < mul(wad, RAY)) {
             // Calculates the needed deltaDebt so together with the existing coins in the safeEngine is enough to exit wad amount of COIN tokens
-            deltaDebt = toInt(subtract(multiply(wad, RAY), coin) / rate);
+            deltaDebt = toInt(subtract(mul(wad, RAY), coin) / rate);
             // This is neeeded due lack of precision. It might need to sum an extra deltaDebt wei (for the given COIN wad amount)
-            deltaDebt = multiply(uint(deltaDebt), rate) < multiply(wad, RAY)
+            deltaDebt = mul(uint(deltaDebt), rate) < mul(wad, RAY)
                 ? deltaDebt + 1
                 : deltaDebt;
         }
@@ -755,11 +776,11 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         // Gets actual coin amount in the safe
         uint coin = safeEngine.coinBalance(usr);
 
-        uint rad = subtract(multiply(generatedDebt, rate), coin);
+        uint rad = subtract(mul(generatedDebt, rate), coin);
         wad = rad / RAY;
 
         // If the rad precision has some dust, it will need to request for 1 extra wad wei
-        wad = multiply(wad, RAY) < rad ? wad + 1 : wad;
+        wad = mul(wad, RAY) < rad ? wad + 1 : wad;
     }
 
     function _getDrawDart(
@@ -775,11 +796,11 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         uint dai = VatLike(vat).dai(urn);
 
         // If there was already enough DAI in the vat balance, just exits it without adding more debt
-        if (dai < multiply(wad, RAY)) {
+        if (dai < mul(wad, RAY)) {
             // Calculates the needed dart so together with the existing dai in the vat is enough to exit wad amount of DAI tokens
-            dart = toInt(subtract(multiply(wad, RAY), dai) / rate);
+            dart = toInt(subtract(mul(wad, RAY), dai) / rate);
             // This is neeeded due lack of precision. It might need to sum an extra dart wei (for the given DAI wad amount)
-            dart = multiply(uint(dart), rate) < multiply(wad, RAY) ? dart + 1 : dart;
+            dart = mul(uint(dart), rate) < mul(wad, RAY) ? dart + 1 : dart;
         }
     }
 
@@ -796,14 +817,14 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         // Gets actual dai amount in the urn
         uint dai = VatLike(vat).dai(usr);
 
-        uint rad = subtract(multiply(art, rate), dai);
+        uint rad = subtract(mul(art, rate), dai);
         wad = rad / RAY;
 
         // If the rad precision has some dust, it will need to request for 1 extra wad wei
-        wad = multiply(wad, RAY) < rad ? wad + 1 : wad;
+        wad = mul(wad, RAY) < rad ? wad + 1 : wad;
     }
 
-    function multiply(uint x, uint y) internal pure returns (uint z) {
+    function mul(uint x, uint y) internal pure returns (uint z) {
         require(y == 0 || (z = x * y) / y == x, "mul-overflow");
     }
 
@@ -822,7 +843,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
 
     /// @notice Converts a wad (18 decimal places) to rad (45 decimal places)
     function toRad(uint wad) internal pure returns (uint rad) {
-        rad = multiply(wad, 10 ** 27);
+        rad = mul(wad, 10 ** 27);
     }
 
     receive() external payable {}

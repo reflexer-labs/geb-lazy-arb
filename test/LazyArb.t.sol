@@ -35,7 +35,9 @@ contract LazyArbTest is Test {
     address public CurveLP = address(0x6c3F90f043a72FA612cbac8115EE7e52BDe6E490);
 
     function setUp() public {
-        mockOracle = new MockOracle();
+        startHoax(user);
+
+        mockOracle = new MockOracle(oracle);
         mockOracle.setRedemptionRate(1e27);
 
         implementation = new LazyArb();
@@ -43,7 +45,9 @@ contract LazyArbTest is Test {
         proxy = new BeaconProxy(
             address(beacon),
             abi.encodeWithSignature(
-                "initialize(address,address,address,address,address,address,address,address,address)",
+                "initialize(address,uint256,address,address,address,address,address,address,address,address,address)",
+                user,
+                500,
                 safeManager,
                 taxCollector,
                 ethJoin,
@@ -58,6 +62,8 @@ contract LazyArbTest is Test {
         lazyArb = LazyArb(payable(address(proxy)));
 
         connector = new CurveConnector(DAI, CurvePool, CurveLP);
+
+        vm.stopPrank();
     }
 
     function depositETH(uint256 depositAmount) public returns (bool) {
