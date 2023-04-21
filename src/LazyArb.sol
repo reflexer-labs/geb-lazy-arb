@@ -310,14 +310,8 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         return true;
     }
 
-    /// @notice Locks Eth, generates debt and sends COIN amount (deltaWad) to msg.sender
-    /// @dev can execute only if the redemption rate is negative
-    /// @param deltaWad uint - Amount
-    /// @param minDaiAmount uint - Minimum DAI amount expect in swap
-    /// @param connector address - External connector address
     function lockETHAndGenerateDebt(
-        uint256 deltaWad,
-        uint256 minDaiAmount,
+        uint256 minAmount,
         address connector
     ) external {
         require(
@@ -329,11 +323,6 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         status = Status.Short;
 
         address safeHandler = safeManager.safes(safe);
-        bytes32 collateralType = safeManager.collateralTypes(safe);
-
-        (address ethFSM,,) = oracleRelayer.collateralTypes(collateralType);
-
-        uint256 priceFeedValue = PriceFeedLike(ethFSM).read();
 
         // Receives ETH amount, converts it to WETH and joins it into the safeEngine
         uint256 collateralBalance = address(this).balance;
@@ -344,46 +333,46 @@ contract LazyArb is ReentrancyGuardUpgradeable {
             0
         );
 
+        rebalanceShort(minAmount, connector);
+    }
+
+    function rebalanceShort(
+        uint256 minAmount,
+        address connector
+    ) public {
+        require(status == Status.Short, "LazyArb/status-not-short");
+
+        address safeHandler = safeManager.safes(safe);
+        bytes32 collateralType = safeManager.collateralTypes(safe);
+
+        (address ethFSM,,) = oracleRelayer.collateralTypes(collateralType);
+        uint256 priceFeedValue = PriceFeedLike(ethFSM).read();
+
         (uint256 depositedCollateralToken, ) = safeEngine.safes(collateralType, safeHandler);
 
         uint256 targetDebtAmount = mul(
             mul(HUNDRED, mul(depositedCollateralToken, priceFeedValue) / WAD) / targetCRatio, RAY
         ) / oracleRelayer.redemptionPrice();
 
-        // Generates debt
-        modifySAFECollateralization(
-            0,
-            _getGeneratedDeltaDebt(safeHandler, collateralType, deltaWad)
-        );
+        uint256 currentDebtAmount = _getRepaidAllDebt(safeHandler, safeHandler, collateralType);
 
-        exitRaiAndConvertToDai(deltaWad, minDaiAmount);
-        depositDai(connector);
-    }
-
-    function rebalanceShort(
-        int256 deltaWad,
-        uint256 minAmount,
-        address connector
-    ) external {
-        require(status == Status.Short, "LazyArb/status-not-short");
-
-        address safeHandler = safeManager.safes(safe);
-        bytes32 collateralType = safeManager.collateralTypes(safe);
-        if (deltaWad > 0) {
+        if (targetDebtAmount > currentDebtAmount) {
+            uint256 deltaWad = targetDebtAmount - currentDebtAmount;
             // Generates debt
             modifySAFECollateralization(
                 0,
-                _getGeneratedDeltaDebt(safeHandler, collateralType, uint256(deltaWad))
+                _getGeneratedDeltaDebt(safeHandler, collateralType, deltaWad)
             );
 
-            exitRaiAndConvertToDai(uint256(deltaWad), minAmount);
+            exitRaiAndConvertToDai(deltaWad, minAmount);
             depositDai(connector);
         } else {
+            uint256 deltaWad = currentDebtAmount - targetDebtAmount;
             uint256 requiredDAIAmount = uniswapV3Quoter.quoteExactOutputSingle(
                 address(DAI),
                 address(systemCoin),
                 uint24(500),
-                uint256(-deltaWad),
+                deltaWad,
                 0
             );
 
@@ -399,7 +388,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
             // Paybacks debt to the SAFE and unlocks WETH amount from it
             modifySAFECollateralization(
                 0,
-                -_getGeneratedDeltaDebt(safeHandler, collateralType, uint256(-deltaWad))
+                -_getGeneratedDeltaDebt(safeHandler, collateralType, deltaWad)
             );
         }
     }
@@ -728,7 +717,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         // If there was already enough COIN in the safeEngine balance, just exits it without adding more debt
         if (coin < mul(wad, RAY)) {
             // Calculates the needed deltaDebt so together with the existing coins in the safeEngine is enough to exit wad amount of COIN tokens
-            deltaDebt = toInt(subtract(mul(wad, RAY), coin) / rate);
+            deltaDebt = toInt(sub(mul(wad, RAY), coin) / rate);
             // This is neeeded due lack of precision. It might need to sum an extra deltaDebt wei (for the given COIN wad amount)
             deltaDebt = mul(uint(deltaDebt), rate) < mul(wad, RAY)
                 ? deltaDebt + 1
@@ -776,7 +765,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         // Gets actual coin amount in the safe
         uint coin = safeEngine.coinBalance(usr);
 
-        uint rad = subtract(mul(generatedDebt, rate), coin);
+        uint rad = sub(mul(generatedDebt, rate), coin);
         wad = rad / RAY;
 
         // If the rad precision has some dust, it will need to request for 1 extra wad wei
@@ -798,7 +787,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         // If there was already enough DAI in the vat balance, just exits it without adding more debt
         if (dai < mul(wad, RAY)) {
             // Calculates the needed dart so together with the existing dai in the vat is enough to exit wad amount of DAI tokens
-            dart = toInt(subtract(mul(wad, RAY), dai) / rate);
+            dart = toInt(sub(mul(wad, RAY), dai) / rate);
             // This is neeeded due lack of precision. It might need to sum an extra dart wei (for the given DAI wad amount)
             dart = mul(uint(dart), rate) < mul(wad, RAY) ? dart + 1 : dart;
         }
@@ -817,7 +806,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         // Gets actual dai amount in the urn
         uint dai = VatLike(vat).dai(usr);
 
-        uint rad = subtract(mul(art, rate), dai);
+        uint rad = sub(mul(art, rate), dai);
         wad = rad / RAY;
 
         // If the rad precision has some dust, it will need to request for 1 extra wad wei
@@ -830,7 +819,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
 
     /// @notice Safe subtraction
     /// @dev Reverts on overflows
-    function subtract(uint x, uint y) internal pure returns (uint z) {
+    function sub(uint x, uint y) internal pure returns (uint z) {
         require((z = x - y) <= x, "sub-overflow");
     }
 
