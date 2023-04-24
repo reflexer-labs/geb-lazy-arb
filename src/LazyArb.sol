@@ -6,7 +6,6 @@ import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 import "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
 import "@uniswap/v3-periphery/contracts/interfaces/IQuoter.sol";
 import "./interface/IConnector.sol";
-import "forge-std/console.sol";
 
 abstract contract CollateralLike {
     function approve(address, uint) public virtual;
@@ -345,8 +344,11 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         address safeHandler = safeManager.safes(safe);
         bytes32 collateralType = safeManager.collateralTypes(safe);
 
-        (address ethFSM,,) = oracleRelayer.collateralTypes(collateralType);
-        uint256 priceFeedValue = PriceFeedLike(ethFSM).read();
+        uint256 priceFeedValue;
+        {
+            (address ethFSM,,) = oracleRelayer.collateralTypes(collateralType);
+            priceFeedValue = PriceFeedLike(ethFSM).read();
+        }
 
         (uint256 depositedCollateralToken, ) = safeEngine.safes(collateralType, safeHandler);
 
@@ -461,7 +463,6 @@ contract LazyArb is ReentrancyGuardUpgradeable {
     }
 
     function lockETHAndDraw(
-        uint wadD,
         address connector
     ) external {
         require(
@@ -473,46 +474,61 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         status = Status.Long;
 
         address urn = dai_manager.urns(cdp);
-        address vat = dai_manager.vat();
-        bytes32 ilk = dai_manager.ilks(cdp);
+        // address vat = dai_manager.vat();
+        // bytes32 ilk = dai_manager.ilks(cdp);
         // Receives ETH amount, converts it to WETH and joins it into the vat
         uint256 collateralBalance = address(this).balance;
         dai_ethJoin_join(urn, collateralBalance);
         // Locks WETH amount into the CDP and generates debt
-        dai_manager.frob(cdp, toInt(collateralBalance), _getDrawDart(vat, urn, ilk, wadD));
-        
-        exitDai(wadD);
-        depositDai(connector);
+        dai_manager.frob(cdp, toInt(collateralBalance), 0);
+
+        rebalanceLong(connector);
     }
 
     function rebalanceLong(
-        int wadD,
         address connector
-    ) external {
+    ) public {
         require(status == Status.Long, "LazyArb/status-not-long");
 
         address urn = dai_manager.urns(cdp);
         address vat = dai_manager.vat();
         bytes32 ilk = dai_manager.ilks(cdp);
-        if (wadD > 0) {
-            // Generates debt
-            dai_manager.frob(cdp, 0, _getDrawDart(vat, urn, ilk, uint(wadD)));
+        (uint256 depositedCollateral,) = VatLike(vat).urns(ilk, urn);
 
-            exitDai(uint(wadD));
+        uint256 priceFeedValue;
+        {
+            bytes32 collateralType = safeManager.collateralTypes(safe);
+            (address ethFSM,,) = oracleRelayer.collateralTypes(collateralType);
+            priceFeedValue = PriceFeedLike(ethFSM).read();
+        }
+
+        uint256 targetDebtAmount = mul(
+            mul(HUNDRED, mul(depositedCollateral, priceFeedValue) / WAD) / targetCRatio, RAY
+        ) / oracleRelayer.redemptionPrice();
+
+        uint256 currentDebtAmount = _getWipeAllWad(vat, urn, urn, ilk);
+
+        if (targetDebtAmount > currentDebtAmount) {
+            uint256 wadD = targetDebtAmount - currentDebtAmount;
+            // Generates debt
+            dai_manager.frob(cdp, 0, _getDrawDart(vat, urn, ilk, wadD));
+
+            exitDai(wadD);
             depositDai(connector);
         } else {
+            uint256 wadD = currentDebtAmount - targetDebtAmount;
             IERC20Upgradeable lpToken = IERC20Upgradeable(IConnector(connector).lpToken());
             uint lpTokenBalance = lpToken.balanceOf(address(this));
             lpToken.approve(connector, lpTokenBalance);
-            IConnector(connector).withdraw(uint(-wadD));
+            IConnector(connector).withdraw(wadD);
 
             // Joins DAI amount into the vat
-            _daiJoin_join(urn, uint(-wadD));
+            _daiJoin_join(urn, wadD);
             // Paybacks debt to the CDP and unlocks WETH amount from it
             dai_manager.frob(
                 cdp,
                 0,
-                -_getDrawDart(vat, urn, ilk, uint(-wadD))
+                -_getDrawDart(vat, urn, ilk, wadD)
             );
         }
     }

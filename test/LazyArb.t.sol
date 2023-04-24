@@ -87,7 +87,7 @@ contract LazyArbTest is Test {
         startHoax(user);
         this.depositETH(10 ether);
         mockOracle.setRedemptionRate(0.998e27);
-        lazyArb.lockETHAndGenerateDebt(4500 * 1e18, 8000 * 1e18, address(connector));
+        lazyArb.lockETHAndGenerateDebt(8000 * 1e18, address(connector));
         vm.stopPrank();
     }
 
@@ -95,7 +95,7 @@ contract LazyArbTest is Test {
         startHoax(user);
         this.depositETH(10 ether);
         mockOracle.setRedemptionRate(0.998e27);
-        lazyArb.lockETHAndGenerateDebt(4500 * 1e18, 8000 * 1e18, address(connector));
+        lazyArb.lockETHAndGenerateDebt(8000 * 1e18, address(connector));
 
         skip(10 days);
 
@@ -110,7 +110,7 @@ contract LazyArbTest is Test {
         startHoax(user);
         this.depositETH(10 ether);
         mockOracle.setRedemptionRate(1.002e27);
-        lazyArb.lockETHAndDraw(8000 * 1e18, address(connector));
+        lazyArb.lockETHAndDraw(address(connector));
         vm.stopPrank();
     }
 
@@ -118,7 +118,7 @@ contract LazyArbTest is Test {
         startHoax(user);
         this.depositETH(10 ether);
         mockOracle.setRedemptionRate(1.002e27);
-        lazyArb.lockETHAndDraw(8000 * 1e18, address(connector));
+        lazyArb.lockETHAndDraw(address(connector));
 
         skip(10 days);
 
