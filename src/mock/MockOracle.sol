@@ -3,6 +3,8 @@ pragma solidity 0.8.17;
 import "forge-std/console.sol";
 
 interface IOracleRelayer {
+    function redemptionPrice() external returns (uint256);
+
     function collateralTypes(
         bytes32
     ) external view returns (address, uint256, uint256);
@@ -16,8 +18,8 @@ contract MockOracle {
         oracleRelayer = IOracleRelayer(_oracleRelayer);
     }
 
-    function redemptionPrice() external view returns (uint256) {
-        return redemptionRate;
+    function redemptionPrice() external returns (uint256) {
+        return oracleRelayer.redemptionPrice();
     }
 
     function setRedemptionRate(uint256 _redemptionRate) external {

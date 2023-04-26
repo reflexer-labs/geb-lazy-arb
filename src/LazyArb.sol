@@ -353,7 +353,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         (uint256 depositedCollateralToken, ) = safeEngine.safes(collateralType, safeHandler);
 
         uint256 targetDebtAmount = mul(
-            mul(HUNDRED, mul(depositedCollateralToken, priceFeedValue) / WAD) / targetCRatio, RAY
+            mul(targetCRatio, mul(depositedCollateralToken, priceFeedValue) / WAD) / MAX_CRATIO, RAY
         ) / oracleRelayer.redemptionPrice();
 
         uint256 currentDebtAmount = _getRepaidAllDebt(safeHandler, safeHandler, collateralType);
@@ -503,8 +503,8 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         }
 
         uint256 targetDebtAmount = mul(
-            mul(HUNDRED, mul(depositedCollateral, priceFeedValue) / WAD) / targetCRatio, RAY
-        ) / oracleRelayer.redemptionPrice();
+            targetCRatio, mul(depositedCollateral, priceFeedValue) / WAD
+        ) / MAX_CRATIO;
 
         uint256 currentDebtAmount = _getWipeAllWad(vat, urn, urn, ilk);
 
