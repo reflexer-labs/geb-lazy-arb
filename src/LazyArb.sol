@@ -198,7 +198,8 @@ contract LazyArb is ReentrancyGuardUpgradeable {
     }
 
     address public owner;
-    uint256 public targetCRatio;
+    uint256 public minCRatio;
+    uint256 public maxCRatio;
 
     uint256 public constant HUNDRED = 100;
     uint256 public constant WAD = 10**18;
@@ -232,7 +233,8 @@ contract LazyArb is ReentrancyGuardUpgradeable {
 
     /// @notice Initialize LazyArb contract
     /// @param owner_ address
-    /// @param targetCRatio_ uint256
+    /// @param minCRatio_ uint256
+    /// @param maxCRatio_ uint256
     /// @param safeManager_ address
     /// @param taxCollector_ address
     /// @param ethJoin_ address
@@ -244,7 +246,8 @@ contract LazyArb is ReentrancyGuardUpgradeable {
     /// @param oracleRelayer_ address
     function initialize(
         address owner_,
-        uint256 targetCRatio_,
+        uint256 minCRatio_,
+        uint256 maxCRatio_,
         address safeManager_,
         address taxCollector_,
         address ethJoin_,
@@ -256,7 +259,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         address oracleRelayer_
     ) external initializer {
         require(owner_ != address(0), "LazyArb/null-owner");
-        require(targetCRatio_ < MAX_CRATIO, "LazyArb/invalid-targetCRatio");
+        require(minCRatio_ < maxCRatio_ && maxCRatio_ < MAX_CRATIO, "LazyArb/invalid-cRatio");
         require(safeManager_ != address(0), "LazyArb/null-safe-manager");
         require(taxCollector_ != address(0), "LazyArb/null-tax-collector");
         require(ethJoin_ != address(0), "LazyArb/null-eth-join");
@@ -268,7 +271,8 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         require(oracleRelayer_ != address(0), "LazyArb/null-oracle-relayer");
 
         owner = owner_;
-        targetCRatio = targetCRatio_;
+        minCRatio = minCRatio_;
+        maxCRatio = maxCRatio_;
 
         safeManager = ManagerLike(safeManager_);
         taxCollector = TaxCollectorLike(taxCollector_);
@@ -292,11 +296,13 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         oracleRelayer.redemptionPrice();
     }
 
-    /// @notice Sets targetCRatio value
-    /// @param targetCRatio_ New targetCRatio value
-    function setTargetCRatio(uint256 targetCRatio_) external onlyOwner {
-        require(targetCRatio_ < MAX_CRATIO, "LazyArb/invalid-targetCRatio");
-        targetCRatio = targetCRatio_;
+    /// @notice Sets minCRatio, maxCRatio value
+    /// @param minCRatio_ New minCRatio value
+    /// @param maxCRatio_ New maxCRatio value
+    function setCRatio(uint256 minCRatio_, uint256 maxCRatio_) external onlyOwner {
+        require(minCRatio_ < maxCRatio_ && maxCRatio_ < MAX_CRATIO, "LazyArb/invalid-cRatio");
+        minCRatio = minCRatio_;
+        maxCRatio = maxCRatio_;
     }
 
     /// @notice Returns current redemption rate
@@ -344,19 +350,29 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         address safeHandler = safeManager.safes(safe);
         bytes32 collateralType = safeManager.collateralTypes(safe);
 
-        uint256 priceFeedValue;
+        uint256 targetDebtAmount;
+        uint256 currentDebtAmount;
+
         {
-            (address ethFSM,,) = oracleRelayer.collateralTypes(collateralType);
-            priceFeedValue = PriceFeedLike(ethFSM).read();
+            uint256 priceFeedValue;
+            {
+                (address ethFSM,,) = oracleRelayer.collateralTypes(collateralType);
+                priceFeedValue = PriceFeedLike(ethFSM).read();
+            }
+
+            (uint256 depositedCollateralToken, ) = safeEngine.safes(collateralType, safeHandler);
+            uint256 totalCollateral = mul(depositedCollateralToken, priceFeedValue) / WAD;
+
+            currentDebtAmount = _getRepaidAllDebt(safeHandler, safeHandler, collateralType);
+            uint256 currentCRatio = mul(mul(currentDebtAmount, oracleRelayer.redemptionPrice()) / RAY, MAX_CRATIO) / totalCollateral;
+            if (currentCRatio >= minCRatio && currentCRatio <= maxCRatio) {
+                // cRatio is in the range.. no need to rebalance
+                return;
+            }
+
+            uint256 targetCRatio = (minCRatio + maxCRatio) / 2;
+            targetDebtAmount = mul(mul(targetCRatio, totalCollateral) / MAX_CRATIO, RAY) / oracleRelayer.redemptionPrice();
         }
-
-        (uint256 depositedCollateralToken, ) = safeEngine.safes(collateralType, safeHandler);
-
-        uint256 targetDebtAmount = mul(
-            mul(targetCRatio, mul(depositedCollateralToken, priceFeedValue) / WAD) / MAX_CRATIO, RAY
-        ) / oracleRelayer.redemptionPrice();
-
-        uint256 currentDebtAmount = _getRepaidAllDebt(safeHandler, safeHandler, collateralType);
 
         if (targetDebtAmount > currentDebtAmount) {
             uint256 deltaWad = targetDebtAmount - currentDebtAmount;
@@ -495,18 +511,33 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         bytes32 ilk = dai_manager.ilks(cdp);
         (uint256 depositedCollateral,) = VatLike(vat).urns(ilk, urn);
 
-        uint256 priceFeedValue;
+        uint256 targetDebtAmount;
+        uint256 currentDebtAmount;
+
         {
-            bytes32 collateralType = safeManager.collateralTypes(safe);
-            (address ethFSM,,) = oracleRelayer.collateralTypes(collateralType);
-            priceFeedValue = PriceFeedLike(ethFSM).read();
+            uint256 priceFeedValue;
+            {
+                bytes32 collateralType = safeManager.collateralTypes(safe);
+                (address ethFSM,,) = oracleRelayer.collateralTypes(collateralType);
+                priceFeedValue = PriceFeedLike(ethFSM).read();
+            }
+
+            uint256 totalCollateral = mul(depositedCollateral, priceFeedValue) / WAD;
+
+            currentDebtAmount = _getWipeAllWad(vat, urn, urn, ilk);
+            {
+                uint256 currentCRatio = mul(currentDebtAmount, MAX_CRATIO) / totalCollateral;
+                if (currentCRatio >= minCRatio && currentCRatio <= maxCRatio) {
+                    // cRatio is in the range.. no need to rebalance
+                    return;
+                }
+            }
+
+            {
+                uint256 targetCRatio = (minCRatio + maxCRatio) / 2;
+                targetDebtAmount = mul(targetCRatio, totalCollateral) / MAX_CRATIO;
+            }
         }
-
-        uint256 targetDebtAmount = mul(
-            targetCRatio, mul(depositedCollateral, priceFeedValue) / WAD
-        ) / MAX_CRATIO;
-
-        uint256 currentDebtAmount = _getWipeAllWad(vat, urn, urn, ilk);
 
         if (targetDebtAmount > currentDebtAmount) {
             uint256 wadD = targetDebtAmount - currentDebtAmount;

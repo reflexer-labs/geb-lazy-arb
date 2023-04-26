@@ -4,15 +4,15 @@ pragma solidity ^0.8.13;
 import "forge-std/Test.sol";
 
 import "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
-import "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
 import "../src/LazyArb.sol";
+import "../src/LazyArbFactory.sol";
 import "../src/connectors/CurveConnector.sol";
 import "../src/mock/MockOracle.sol";
 
 contract LazyArbTest is Test {
     LazyArb public implementation;
     UpgradeableBeacon public beacon;
-    BeaconProxy public proxy;
+    LazyArbFactory public factory;
     LazyArb public lazyArb;
     CurveConnector public connector;
     MockOracle public mockOracle;
@@ -42,24 +42,19 @@ contract LazyArbTest is Test {
 
         implementation = new LazyArb();
         beacon = new UpgradeableBeacon(address(implementation));
-        proxy = new BeaconProxy(
+        factory = new LazyArbFactory(
             address(beacon),
-            abi.encodeWithSignature(
-                "initialize(address,uint256,address,address,address,address,address,address,address,address,address)",
-                user,
-                600,
-                safeManager,
-                taxCollector,
-                ethJoin,
-                coinJoin,
-                dai_manager,
-                dai_jug,
-                dai_ethJoin,
-                dai_daiJoin,
-                address(mockOracle)
-            )
+            safeManager,
+            taxCollector,
+            ethJoin,
+            coinJoin,
+            dai_manager,
+            dai_jug,
+            dai_ethJoin,
+            dai_daiJoin,
+            address(mockOracle)
         );
-        lazyArb = LazyArb(payable(address(proxy)));
+        lazyArb = LazyArb(payable(factory.createLazyArb(500, 600)));
 
         connector = new CurveConnector(DAI, CurvePool, CurveLP);
 

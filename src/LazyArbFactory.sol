@@ -57,15 +57,17 @@ contract LazyArbFactory {
     }
 
     function createLazyArb(
-        uint256 targetCRatio_
+        uint256 minCRatio_,
+        uint256 maxCRatio_
     ) external returns (address lazyArb) {
         lazyArb = address(
             new BeaconProxy(
                 beacon,
                 abi.encodeWithSignature(
-                    "initialize(address,uint256,address,address,address,address,address,address,address,address,address)",
+                    "initialize(address,uint256,uint256,address,address,address,address,address,address,address,address,address)",
                     msg.sender,
-                    targetCRatio_,
+                    minCRatio_,
+                    maxCRatio_,
                     safeManager,
                     taxCollector,
                     ethJoin,
