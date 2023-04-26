@@ -18,6 +18,7 @@ contract LazyArbTest is Test {
     MockOracle public mockOracle;
 
     address public user = address(0x1);
+    address public keeper = address(0x2);
     address public safeManager =
         address(0xEfe0B4cA532769a3AE758fD82E1426a03A94F185);
     address public taxCollector = address(0xcDB05aEda142a1B0D6044C09C64e4226c1a281EB);
@@ -61,7 +62,8 @@ contract LazyArbTest is Test {
         vm.stopPrank();
     }
 
-    function depositETH(uint256 depositAmount) public returns (bool) {
+    function depositETH(address caller, uint256 depositAmount) public returns (bool) {
+        hoax(caller);
         return lazyArb.depositETH{value: depositAmount}();
     }
 
@@ -71,24 +73,29 @@ contract LazyArbTest is Test {
         assertEq(redemptionRate, 1.0001e27);
     }
 
-    function testDepositETH() public {
-        hoax(user);
+    function testDepositETH_fail_nonOwner() public {
         uint256 depositAmount = 30 ether;
-        assertTrue(this.depositETH(depositAmount));
+        vm.expectRevert("LazyArb/not-owner");
+        this.depositETH(keeper, depositAmount);
+    }
+
+    function testDepositETH() public {
+        uint256 depositAmount = 30 ether;
+        assertTrue(this.depositETH(user, depositAmount));
         assertEq(address(lazyArb).balance, depositAmount);
     }
 
     function testLockETHAndGenerateDebt() public {
+        this.depositETH(user, 30 ether);
         startHoax(user);
-        this.depositETH(30 ether);
         mockOracle.setRedemptionRate(0.998e27);
         lazyArb.lockETHAndGenerateDebt(8000 * 1e18, address(connector));
         vm.stopPrank();
     }
 
     function testRepayDebtAndFreeETH() public {
+        this.depositETH(user, 30 ether);
         startHoax(user);
-        this.depositETH(30 ether);
         mockOracle.setRedemptionRate(0.998e27);
         lazyArb.lockETHAndGenerateDebt(8000 * 1e18, address(connector));
 
@@ -102,16 +109,16 @@ contract LazyArbTest is Test {
     }
 
     function testLockETHAndDraw() public {
+        this.depositETH(user, 30 ether);
         startHoax(user);
-        this.depositETH(30 ether);
         mockOracle.setRedemptionRate(1.002e27);
         lazyArb.lockETHAndDraw(address(connector));
         vm.stopPrank();
     }
 
     function testWipeAndFreeETH() public {
+        this.depositETH(user, 30 ether);
         startHoax(user);
-        this.depositETH(30 ether);
         mockOracle.setRedemptionRate(1.002e27);
         lazyArb.lockETHAndDraw(address(connector));
 

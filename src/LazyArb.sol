@@ -311,14 +311,14 @@ contract LazyArb is ReentrancyGuardUpgradeable {
     }
 
     /// @notice Deposit ETH
-    function depositETH() external payable returns (bool success) {
+    function depositETH() external payable onlyOwner returns (bool success) {
         return true;
     }
 
     function lockETHAndGenerateDebt(
         uint256 minAmount,
         address connector
-    ) external {
+    ) external onlyOwner {
         require(
             oracleRelayer.redemptionRate() < RAY,
             "LazyArb/redemption-rate-positive"
@@ -365,10 +365,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
 
             currentDebtAmount = _getRepaidAllDebt(safeHandler, safeHandler, collateralType);
             uint256 currentCRatio = mul(mul(currentDebtAmount, oracleRelayer.redemptionPrice()) / RAY, MAX_CRATIO) / totalCollateral;
-            if (currentCRatio >= minCRatio && currentCRatio <= maxCRatio) {
-                // cRatio is in the range.. no need to rebalance
-                return;
-            }
+            require(currentCRatio < minCRatio || currentCRatio > maxCRatio, "LazyArb/cRatio-in-range");
 
             uint256 targetCRatio = (minCRatio + maxCRatio) / 2;
             targetDebtAmount = mul(mul(targetCRatio, totalCollateral) / MAX_CRATIO, RAY) / oracleRelayer.redemptionPrice();
@@ -419,7 +416,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         uint collateralWad,
         uint minRaiAmount,
         address[] calldata connectors
-    ) external {
+    ) external onlyOwner {
         require(status == Status.Short, "LazyArb/status-not-short");
         status = Status.None;
 
@@ -480,7 +477,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
 
     function lockETHAndDraw(
         address connector
-    ) external {
+    ) external onlyOwner {
         require(
             oracleRelayer.redemptionRate() > RAY,
             "LazyArb/redemption-rate-positive"
@@ -527,10 +524,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
             currentDebtAmount = _getWipeAllWad(vat, urn, urn, ilk);
             {
                 uint256 currentCRatio = mul(currentDebtAmount, MAX_CRATIO) / totalCollateral;
-                if (currentCRatio >= minCRatio && currentCRatio <= maxCRatio) {
-                    // cRatio is in the range.. no need to rebalance
-                    return;
-                }
+                require(currentCRatio < minCRatio || currentCRatio > maxCRatio, "LazyArb/cRatio-in-range");
             }
 
             {
@@ -567,7 +561,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
     function wipeAndFreeETH(
         uint wadC,
         address[] calldata connectors
-    ) external {
+    ) external onlyOwner {
         require(status == Status.Long, "LazyArb/status-not-long");
         status = Status.None;
 
