@@ -396,7 +396,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
             lpToken.approve(connector, lpTokenBalance);
             IConnector(connector).withdraw(requiredDAIAmount);
 
-            uniswapSwap(address(DAI), address(systemCoin), requiredDAIAmount, minAmount);
+            uniswapSwap(address(DAI), address(systemCoin), DAI.balanceOf(address(this)), minAmount);
 
             uint256 raiBalance = systemCoin.balanceOf(address(this));
             _coinJoin_join(safeHandler, raiBalance);
@@ -546,6 +546,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
             uint lpTokenBalance = lpToken.balanceOf(address(this));
             lpToken.approve(connector, lpTokenBalance);
             IConnector(connector).withdraw(wadD);
+            wadD = DAI.balanceOf(address(this));
 
             // Joins DAI amount into the vat
             _daiJoin_join(urn, wadD);

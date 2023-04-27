@@ -67,6 +67,22 @@ contract LazyArbTest is Test {
         return lazyArb.depositETH{value: depositAmount}();
     }
 
+    function short(address caller, uint256 depositAmount) public {
+        startHoax(caller);
+        lazyArb.depositETH{value: depositAmount}();
+        mockOracle.setRedemptionRate(0.998e27);
+        lazyArb.lockETHAndGenerateDebt(8000 * 1e18, address(connector));
+        vm.stopPrank();
+    }
+
+    function long(address caller, uint256 depositAmount) public {
+        startHoax(caller);
+        lazyArb.depositETH{value: depositAmount}();
+        mockOracle.setRedemptionRate(1.002e27);
+        lazyArb.lockETHAndDraw(address(connector));
+        vm.stopPrank();
+    }
+
     function testRedemptionRate() public {
         mockOracle.setRedemptionRate(1.0001e27);
         uint256 redemptionRate = lazyArb.redemptionRate();
@@ -85,11 +101,76 @@ contract LazyArbTest is Test {
         assertEq(address(lazyArb).balance, depositAmount);
     }
 
+    function testLockETHAndGenerateDebt_fail_nonOwner() public {
+        this.depositETH(user, 30 ether);
+        startHoax(keeper);
+        mockOracle.setRedemptionRate(0.998e27);
+        vm.expectRevert("LazyArb/not-owner");
+        lazyArb.lockETHAndGenerateDebt(8000 * 1e18, address(connector));
+        vm.stopPrank();
+    }
+
     function testLockETHAndGenerateDebt() public {
         this.depositETH(user, 30 ether);
         startHoax(user);
         mockOracle.setRedemptionRate(0.998e27);
         lazyArb.lockETHAndGenerateDebt(8000 * 1e18, address(connector));
+        vm.stopPrank();
+    }
+
+    function testRebalanceShort_not_short() public {
+        startHoax(keeper);
+        vm.expectRevert("LazyArb/status-not-short");
+        lazyArb.rebalanceShort(0, address(connector));
+        vm.stopPrank();
+    }
+
+    function testRebalanceShort_cRatio_in_range() public {
+        this.short(user, 30 ether);
+
+        startHoax(keeper);
+        vm.expectRevert("LazyArb/cRatio-in-range");
+        lazyArb.rebalanceShort(0, address(connector));
+        vm.stopPrank();
+    }
+
+    function testRebalanceShort_cRatio_below_range() public {
+        this.short(user, 30 ether);
+
+        hoax(user);
+        lazyArb.setCRatio(600, 700);
+
+        startHoax(keeper);
+        lazyArb.rebalanceShort(0, address(connector));
+        vm.stopPrank();
+    }
+
+    function testRebalanceShort_cRatio_above_range() public {
+        this.short(user, 30 ether);
+
+        hoax(user);
+        lazyArb.setCRatio(400, 500);
+
+        startHoax(keeper);
+        lazyArb.rebalanceShort(0, address(connector));
+        vm.stopPrank();
+    }
+
+    function testRepayDebtAndFreeETH_fail_nonOwner() public {
+        this.depositETH(user, 30 ether);
+        startHoax(user);
+        mockOracle.setRedemptionRate(0.998e27);
+        lazyArb.lockETHAndGenerateDebt(8000 * 1e18, address(connector));
+        vm.stopPrank();
+
+        skip(10 days);
+
+        startHoax(keeper);
+        address[] memory connectors = new address[](1);
+        connectors[0] = address(connector);
+        vm.expectRevert("LazyArb/not-owner");
+        lazyArb.repayDebtAndFreeETH(5 ether, 4450 * 1e18, connectors);
+
         vm.stopPrank();
     }
 
@@ -108,11 +189,38 @@ contract LazyArbTest is Test {
         vm.stopPrank();
     }
 
+    function testLockETHAndDraw_fail_nonOwner() public {
+        this.depositETH(user, 30 ether);
+        startHoax(keeper);
+        mockOracle.setRedemptionRate(1.002e27);
+        vm.expectRevert("LazyArb/not-owner");
+        lazyArb.lockETHAndDraw(address(connector));
+        vm.stopPrank();
+    }
+
     function testLockETHAndDraw() public {
         this.depositETH(user, 30 ether);
         startHoax(user);
         mockOracle.setRedemptionRate(1.002e27);
         lazyArb.lockETHAndDraw(address(connector));
+        vm.stopPrank();
+    }
+
+    function testWipeAndFreeETH_fail_nonOwner() public {
+        this.depositETH(user, 30 ether);
+        startHoax(user);
+        mockOracle.setRedemptionRate(1.002e27);
+        lazyArb.lockETHAndDraw(address(connector));
+        vm.stopPrank();
+
+        skip(10 days);
+
+        startHoax(keeper);
+        address[] memory connectors = new address[](1);
+        connectors[0] = address(connector);
+        vm.expectRevert("LazyArb/not-owner");
+        lazyArb.wipeAndFreeETH(5 ether, connectors);
+
         vm.stopPrank();
     }
 
@@ -128,6 +236,44 @@ contract LazyArbTest is Test {
         connectors[0] = address(connector);
         lazyArb.wipeAndFreeETH(5 ether, connectors);
 
+        vm.stopPrank();
+    }
+
+    function testRebalanceLong_not_long() public {
+        startHoax(keeper);
+        vm.expectRevert("LazyArb/status-not-long");
+        lazyArb.rebalanceLong(address(connector));
+        vm.stopPrank();
+    }
+
+    function testRebalanceLong_cRatio_in_range() public {
+        this.long(user, 30 ether);
+
+        startHoax(keeper);
+        vm.expectRevert("LazyArb/cRatio-in-range");
+        lazyArb.rebalanceLong(address(connector));
+        vm.stopPrank();
+    }
+
+    function testRebalanceLong_cRatio_below_range() public {
+        this.long(user, 30 ether);
+
+        hoax(user);
+        lazyArb.setCRatio(600, 700);
+
+        startHoax(keeper);
+        lazyArb.rebalanceLong(address(connector));
+        vm.stopPrank();
+    }
+
+    function testRebalanceLong_cRatio_above_range() public {
+        this.long(user, 30 ether);
+
+        hoax(user);
+        lazyArb.setCRatio(400, 500);
+
+        startHoax(keeper);
+        lazyArb.rebalanceLong(address(connector));
         vm.stopPrank();
     }
 }
