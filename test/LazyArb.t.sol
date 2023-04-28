@@ -169,7 +169,7 @@ contract LazyArbTest is Test {
         address[] memory connectors = new address[](1);
         connectors[0] = address(connector);
         vm.expectRevert("LazyArb/not-owner");
-        lazyArb.repayDebtAndFreeETH(5 ether, 4450 * 1e18, connectors);
+        lazyArb.repayDebtAndFreeETH(4450 * 1e18, connectors);
 
         vm.stopPrank();
     }
@@ -184,7 +184,7 @@ contract LazyArbTest is Test {
 
         address[] memory connectors = new address[](1);
         connectors[0] = address(connector);
-        lazyArb.repayDebtAndFreeETH(5 ether, 4450 * 1e18, connectors);
+        lazyArb.repayDebtAndFreeETH(4450 * 1e18, connectors);
 
         vm.stopPrank();
     }
@@ -219,7 +219,7 @@ contract LazyArbTest is Test {
         address[] memory connectors = new address[](1);
         connectors[0] = address(connector);
         vm.expectRevert("LazyArb/not-owner");
-        lazyArb.wipeAndFreeETH(5 ether, connectors);
+        lazyArb.wipeAndFreeETH(connectors);
 
         vm.stopPrank();
     }
@@ -234,7 +234,7 @@ contract LazyArbTest is Test {
 
         address[] memory connectors = new address[](1);
         connectors[0] = address(connector);
-        lazyArb.wipeAndFreeETH(5 ether, connectors);
+        lazyArb.wipeAndFreeETH(connectors);
 
         vm.stopPrank();
     }
@@ -275,5 +275,53 @@ contract LazyArbTest is Test {
         startHoax(keeper);
         lazyArb.rebalanceLong(address(connector));
         vm.stopPrank();
+    }
+
+    function testFlip_fail_nonOwner() public {
+        vm.expectRevert("LazyArb/not-owner");
+        hoax(keeper);
+        address[] memory connectors = new address[](1);
+        connectors[0] = address(connector);
+        lazyArb.flip(0, connectors, address(connector));
+    }
+
+    function testFlip_fail_not_long() public {
+        this.short(user, 30 ether);
+
+        vm.expectRevert("LazyArb/status-not-long");
+        hoax(user);
+        address[] memory connectors = new address[](1);
+        connectors[0] = address(connector);
+        lazyArb.flip(0, connectors, address(connector));
+    }
+
+    function testFlip_fail_not_short() public {
+        this.long(user, 30 ether);
+
+        vm.expectRevert("LazyArb/status-not-short");
+        hoax(user);
+        address[] memory connectors = new address[](1);
+        connectors[0] = address(connector);
+        lazyArb.flip(0, connectors, address(connector));
+    }
+
+    function testFlip_success_long_to_short() public {
+        this.long(user, 30 ether);
+
+        startHoax(user);
+        mockOracle.setRedemptionRate(0.998e27);
+        address[] memory connectors = new address[](1);
+        connectors[0] = address(connector);
+        lazyArb.flip(0, connectors, address(connector));
+    }
+
+    function testFlip_success_short_to_long() public {
+        this.short(user, 30 ether);
+
+        startHoax(user);
+        mockOracle.setRedemptionRate(1.002e27);
+        address[] memory connectors = new address[](1);
+        connectors[0] = address(connector);
+        lazyArb.flip(0, connectors, address(connector));
     }
 }
