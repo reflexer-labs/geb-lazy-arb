@@ -621,7 +621,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         uint256 minAmount,
         address[] calldata connectors,
         address connector
-    ) external onlyOwner {
+    ) external {
         if (oracleRelayer.redemptionRate() < RAY) {
             require(status == Status.Long, "LazyArb/status-not-long");
 

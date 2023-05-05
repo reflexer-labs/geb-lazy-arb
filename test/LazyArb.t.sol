@@ -35,6 +35,8 @@ contract LazyArbTest is Test {
     address public CurvePool = address(0xbEbc44782C7dB0a1A60Cb6fe97d0b483032FF1C7);
     address public CurveLP = address(0x6c3F90f043a72FA612cbac8115EE7e52BDe6E490);
 
+    SAFEEngineLike public safeEngine;
+
     function setUp() public {
         startHoax(user);
 
@@ -58,6 +60,8 @@ contract LazyArbTest is Test {
         lazyArb = LazyArb(payable(factory.createLazyArb(500, 600)));
 
         connector = new CurveConnector(DAI, CurvePool, CurveLP);
+
+        safeEngine = SAFEEngineLike(ManagerLike(safeManager).safeEngine());
 
         vm.stopPrank();
     }
@@ -116,6 +120,15 @@ contract LazyArbTest is Test {
         mockOracle.setRedemptionRate(0.998e27);
         lazyArb.lockETHAndGenerateDebt(8000 * 1e18, address(connector));
         vm.stopPrank();
+
+        assertEq(address(lazyArb).balance, 0);
+        assertEq(uint8(lazyArb.status()), uint8(LazyArb.Status.Short));
+
+        address safeHandler = ManagerLike(safeManager).safes(lazyArb.safe());
+        bytes32 collateralType = ManagerLike(safeManager).collateralTypes(lazyArb.safe());
+        (uint256 depositedCollateralToken, uint256 generatedDebt) = safeEngine.safes(collateralType, safeHandler);
+        assertEq(depositedCollateralToken, 30 ether);
+        assertGt(generatedDebt, 0);
     }
 
     function testRebalanceShort_not_short() public {
@@ -143,6 +156,15 @@ contract LazyArbTest is Test {
         startHoax(keeper);
         lazyArb.rebalanceShort(0, address(connector));
         vm.stopPrank();
+
+        assertEq(address(lazyArb).balance, 0);
+        assertEq(uint8(lazyArb.status()), uint8(LazyArb.Status.Short));
+
+        address safeHandler = ManagerLike(safeManager).safes(lazyArb.safe());
+        bytes32 collateralType = ManagerLike(safeManager).collateralTypes(lazyArb.safe());
+        (uint256 depositedCollateralToken, uint256 generatedDebt) = safeEngine.safes(collateralType, safeHandler);
+        assertEq(depositedCollateralToken, 30 ether);
+        assertGt(generatedDebt, 0);
     }
 
     function testRebalanceShort_cRatio_above_range() public {
@@ -154,6 +176,15 @@ contract LazyArbTest is Test {
         startHoax(keeper);
         lazyArb.rebalanceShort(0, address(connector));
         vm.stopPrank();
+
+        assertEq(address(lazyArb).balance, 0);
+        assertEq(uint8(lazyArb.status()), uint8(LazyArb.Status.Short));
+
+        address safeHandler = ManagerLike(safeManager).safes(lazyArb.safe());
+        bytes32 collateralType = ManagerLike(safeManager).collateralTypes(lazyArb.safe());
+        (uint256 depositedCollateralToken, uint256 generatedDebt) = safeEngine.safes(collateralType, safeHandler);
+        assertEq(depositedCollateralToken, 30 ether);
+        assertGt(generatedDebt, 0);
     }
 
     function testRepayDebtAndFreeETH_fail_nonOwner() public {
@@ -187,6 +218,15 @@ contract LazyArbTest is Test {
         lazyArb.repayDebtAndFreeETH(4450 * 1e18, connectors);
 
         vm.stopPrank();
+
+        assertApproxEqAbs(address(lazyArb).balance, 30 ether, 0.1 ether);
+        assertEq(uint8(lazyArb.status()), uint8(LazyArb.Status.None));
+
+        address safeHandler = ManagerLike(safeManager).safes(lazyArb.safe());
+        bytes32 collateralType = ManagerLike(safeManager).collateralTypes(lazyArb.safe());
+        (uint256 depositedCollateralToken, uint256 generatedDebt) = safeEngine.safes(collateralType, safeHandler);
+        assertEq(depositedCollateralToken, 0);
+        assertEq(generatedDebt, 0);
     }
 
     function testLockETHAndDraw_fail_nonOwner() public {
@@ -204,6 +244,16 @@ contract LazyArbTest is Test {
         mockOracle.setRedemptionRate(1.002e27);
         lazyArb.lockETHAndDraw(address(connector));
         vm.stopPrank();
+
+        assertEq(address(lazyArb).balance, 0);
+        assertEq(uint8(lazyArb.status()), uint8(LazyArb.Status.Long));
+
+        DaiManagerLike daiManager = DaiManagerLike(dai_manager);
+        address urn = daiManager.urns(lazyArb.cdp());
+        bytes32 ilk = daiManager.ilks(lazyArb.cdp());
+        (uint256 depositedCollateral, uint256 art) = VatLike(daiManager.vat()).urns(ilk, urn);
+        assertEq(depositedCollateral, 30 ether);
+        assertGt(art, 0);
     }
 
     function testWipeAndFreeETH_fail_nonOwner() public {
@@ -237,6 +287,16 @@ contract LazyArbTest is Test {
         lazyArb.wipeAndFreeETH(connectors);
 
         vm.stopPrank();
+
+        assertApproxEqAbs(address(lazyArb).balance, 30 ether, 0.1 ether);
+        assertEq(uint8(lazyArb.status()), uint8(LazyArb.Status.None));
+
+        DaiManagerLike daiManager = DaiManagerLike(dai_manager);
+        address urn = daiManager.urns(lazyArb.cdp());
+        bytes32 ilk = daiManager.ilks(lazyArb.cdp());
+        (uint256 depositedCollateral, uint256 art) = VatLike(daiManager.vat()).urns(ilk, urn);
+        assertEq(depositedCollateral, 0);
+        assertEq(art, 0);
     }
 
     function testRebalanceLong_not_long() public {
@@ -264,6 +324,16 @@ contract LazyArbTest is Test {
         startHoax(keeper);
         lazyArb.rebalanceLong(address(connector));
         vm.stopPrank();
+
+        assertEq(address(lazyArb).balance, 0);
+        assertEq(uint8(lazyArb.status()), uint8(LazyArb.Status.Long));
+
+        DaiManagerLike daiManager = DaiManagerLike(dai_manager);
+        address urn = daiManager.urns(lazyArb.cdp());
+        bytes32 ilk = daiManager.ilks(lazyArb.cdp());
+        (uint256 depositedCollateral, uint256 art) = VatLike(daiManager.vat()).urns(ilk, urn);
+        assertEq(depositedCollateral, 30 ether);
+        assertGt(art, 0);
     }
 
     function testRebalanceLong_cRatio_above_range() public {
@@ -275,14 +345,16 @@ contract LazyArbTest is Test {
         startHoax(keeper);
         lazyArb.rebalanceLong(address(connector));
         vm.stopPrank();
-    }
 
-    function testFlip_fail_nonOwner() public {
-        vm.expectRevert("LazyArb/not-owner");
-        hoax(keeper);
-        address[] memory connectors = new address[](1);
-        connectors[0] = address(connector);
-        lazyArb.flip(0, connectors, address(connector));
+        assertEq(address(lazyArb).balance, 0);
+        assertEq(uint8(lazyArb.status()), uint8(LazyArb.Status.Long));
+
+        DaiManagerLike daiManager = DaiManagerLike(dai_manager);
+        address urn = daiManager.urns(lazyArb.cdp());
+        bytes32 ilk = daiManager.ilks(lazyArb.cdp());
+        (uint256 depositedCollateral, uint256 art) = VatLike(daiManager.vat()).urns(ilk, urn);
+        assertEq(depositedCollateral, 30 ether);
+        assertGt(art, 0);
     }
 
     function testFlip_fail_not_long() public {
@@ -313,6 +385,23 @@ contract LazyArbTest is Test {
         address[] memory connectors = new address[](1);
         connectors[0] = address(connector);
         lazyArb.flip(0, connectors, address(connector));
+        vm.stopPrank();
+
+        assertEq(address(lazyArb).balance, 0);
+        assertEq(uint8(lazyArb.status()), uint8(LazyArb.Status.Short));
+
+        address safeHandler = ManagerLike(safeManager).safes(lazyArb.safe());
+        bytes32 collateralType = ManagerLike(safeManager).collateralTypes(lazyArb.safe());
+        (uint256 depositedCollateralToken, uint256 generatedDebt) = safeEngine.safes(collateralType, safeHandler);
+        assertApproxEqAbs(depositedCollateralToken, 30 ether, 0.1 ether);
+        assertGt(generatedDebt, 0);
+
+        DaiManagerLike daiManager = DaiManagerLike(dai_manager);
+        address urn = daiManager.urns(lazyArb.cdp());
+        bytes32 ilk = daiManager.ilks(lazyArb.cdp());
+        (uint256 depositedCollateral, uint256 art) = VatLike(daiManager.vat()).urns(ilk, urn);
+        assertEq(depositedCollateral, 0);
+        assertEq(art, 0);
     }
 
     function testFlip_success_short_to_long() public {
@@ -323,5 +412,22 @@ contract LazyArbTest is Test {
         address[] memory connectors = new address[](1);
         connectors[0] = address(connector);
         lazyArb.flip(0, connectors, address(connector));
+        vm.stopPrank();
+
+        assertEq(address(lazyArb).balance, 0);
+        assertEq(uint8(lazyArb.status()), uint8(LazyArb.Status.Long));
+
+        DaiManagerLike daiManager = DaiManagerLike(dai_manager);
+        address urn = daiManager.urns(lazyArb.cdp());
+        bytes32 ilk = daiManager.ilks(lazyArb.cdp());
+        (uint256 depositedCollateral, uint256 art) = VatLike(daiManager.vat()).urns(ilk, urn);
+        assertApproxEqAbs(depositedCollateral, 30 ether, 0.1 ether);
+        assertGt(art, 0);
+
+        address safeHandler = ManagerLike(safeManager).safes(lazyArb.safe());
+        bytes32 collateralType = ManagerLike(safeManager).collateralTypes(lazyArb.safe());
+        (uint256 depositedCollateralToken, uint256 generatedDebt) = safeEngine.safes(collateralType, safeHandler);
+        assertEq(depositedCollateralToken, 0);
+        assertEq(generatedDebt, 0);
     }
 }
