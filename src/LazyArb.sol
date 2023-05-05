@@ -700,7 +700,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         ethJoin.join(safeHandler, value);
     }
 
-    function dai_ethJoin_join(address urn, uint256 value) public payable {
+    function dai_ethJoin_join(address urn, uint256 value) internal {
         // Wraps ETH in WETH
         dai_ethJoin.gem().deposit{value: value}();
         // Approves adapter to take the WETH amount
@@ -729,7 +729,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
     function transferCollateral(
         address dst,
         uint256 wad
-    ) public {
+    ) internal {
         safeManager.transferCollateral(safe, dst, wad);
     }
 
@@ -747,7 +747,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         coinJoin.join(safeHandler, wad);
     }
 
-    function _daiJoin_join(address urn, uint256 wad) public {
+    function _daiJoin_join(address urn, uint256 wad) internal {
         // Approves adapter to take the DAI amount
         dai_daiJoin.dai().approve(address(dai_daiJoin), wad);
         // Joins DAI into the vat
