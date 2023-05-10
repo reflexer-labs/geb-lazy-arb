@@ -355,14 +355,14 @@ contract LazyArb is ReentrancyGuardUpgradeable {
             }
 
             (uint256 depositedCollateralToken, ) = safeEngine.safes(collateralType, safeHandler);
-            uint256 totalCollateral = mul(depositedCollateralToken, priceFeedValue) / WAD;
+            uint256 totalCollateral = (depositedCollateralToken * priceFeedValue) / WAD;
 
             currentDebtAmount = _getRepaidAllDebt(safeHandler, safeHandler, collateralType);
-            uint256 currentCRatio = mul(mul(currentDebtAmount, oracleRelayer.redemptionPrice()) / RAY, MAX_CRATIO) / totalCollateral;
+            uint256 currentCRatio = ((currentDebtAmount * oracleRelayer.redemptionPrice()) / RAY * MAX_CRATIO) / totalCollateral;
             require(currentCRatio < minCRatio || currentCRatio > maxCRatio, "LazyArb/cRatio-in-range");
 
             uint256 targetCRatio = (minCRatio + maxCRatio) / 2;
-            targetDebtAmount = mul(mul(targetCRatio, totalCollateral) / MAX_CRATIO, RAY) / oracleRelayer.redemptionPrice();
+            targetDebtAmount = ((targetCRatio * totalCollateral) / MAX_CRATIO * RAY) / oracleRelayer.redemptionPrice();
         }
 
         if (targetDebtAmount > currentDebtAmount) {
@@ -511,17 +511,17 @@ contract LazyArb is ReentrancyGuardUpgradeable {
                 priceFeedValue = PriceFeedLike(ethFSM).read();
             }
 
-            uint256 totalCollateral = mul(depositedCollateral, priceFeedValue) / WAD;
+            uint256 totalCollateral = (depositedCollateral * priceFeedValue) / WAD;
 
             currentDebtAmount = _getWipeAllWad(vat, urn, urn, ilk);
             {
-                uint256 currentCRatio = mul(currentDebtAmount, MAX_CRATIO) / totalCollateral;
+                uint256 currentCRatio = (currentDebtAmount * MAX_CRATIO) / totalCollateral;
                 require(currentCRatio < minCRatio || currentCRatio > maxCRatio, "LazyArb/cRatio-in-range");
             }
 
             {
                 uint256 targetCRatio = (minCRatio + maxCRatio) / 2;
-                targetDebtAmount = mul(targetCRatio, totalCollateral) / MAX_CRATIO;
+                targetDebtAmount = (targetCRatio * totalCollateral) / MAX_CRATIO;
             }
         }
 
@@ -766,11 +766,12 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         uint256 coin = safeEngine.coinBalance(safeHandler);
 
         // If there was already enough COIN in the safeEngine balance, just exits it without adding more debt
-        if (coin < mul(wad, RAY)) {
+        uint256 rad = wad * RAY;
+        if (coin < rad) {
             // Calculates the needed deltaDebt so together with the existing coins in the safeEngine is enough to exit wad amount of COIN tokens
-            deltaDebt = toInt(sub(mul(wad, RAY), coin) / rate);
+            deltaDebt = toInt((rad - coin) / rate);
             // This is neeeded due lack of precision. It might need to sum an extra deltaDebt wei (for the given COIN wad amount)
-            deltaDebt = mul(uint256(deltaDebt), rate) < mul(wad, RAY)
+            deltaDebt = (uint256(deltaDebt) * rate) < rad
                 ? deltaDebt + 1
                 : deltaDebt;
         }
@@ -816,11 +817,11 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         // Gets actual coin amount in the safe
         uint256 coin = safeEngine.coinBalance(usr);
 
-        uint256 rad = sub(mul(generatedDebt, rate), coin);
+        uint256 rad = (generatedDebt * rate) - coin;
         wad = rad / RAY;
 
         // If the rad precision has some dust, it will need to request for 1 extra wad wei
-        wad = mul(wad, RAY) < rad ? wad + 1 : wad;
+        wad = (wad * RAY) < rad ? wad + 1 : wad;
     }
 
     function _getDrawDart(
@@ -836,11 +837,12 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         uint256 dai = VatLike(vat).dai(urn);
 
         // If there was already enough DAI in the vat balance, just exits it without adding more debt
-        if (dai < mul(wad, RAY)) {
+        uint256 rad = wad * RAY;
+        if (dai < rad) {
             // Calculates the needed dart so together with the existing dai in the vat is enough to exit wad amount of DAI tokens
-            dart = toInt(sub(mul(wad, RAY), dai) / rate);
+            dart = toInt((rad - dai) / rate);
             // This is neeeded due lack of precision. It might need to sum an extra dart wei (for the given DAI wad amount)
-            dart = mul(uint256(dart), rate) < mul(wad, RAY) ? dart + 1 : dart;
+            dart = (uint256(dart) * rate) < rad ? dart + 1 : dart;
         }
     }
 
@@ -857,21 +859,11 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         // Gets actual dai amount in the urn
         uint256 dai = VatLike(vat).dai(usr);
 
-        uint256 rad = sub(mul(art, rate), dai);
+        uint256 rad = (art * rate) - dai;
         wad = rad / RAY;
 
         // If the rad precision has some dust, it will need to request for 1 extra wad wei
-        wad = mul(wad, RAY) < rad ? wad + 1 : wad;
-    }
-
-    function mul(uint256 x, uint256 y) internal pure returns (uint256 z) {
-        require(y == 0 || (z = x * y) / y == x, "mul-overflow");
-    }
-
-    /// @notice Safe subtraction
-    /// @dev Reverts on overflows
-    function sub(uint256 x, uint256 y) internal pure returns (uint256 z) {
-        require((z = x - y) <= x, "sub-overflow");
+        wad = (wad * RAY) < rad ? wad + 1 : wad;
     }
 
     /// @notice Safe conversion uint256 -> int
@@ -883,7 +875,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
 
     /// @notice Converts a wad (18 decimal places) to rad (45 decimal places)
     function toRad(uint256 wad) internal pure returns (uint256 rad) {
-        rad = mul(wad, 10 ** 27);
+        rad = wad * (10 ** 27);
     }
 
     receive() external payable {}
