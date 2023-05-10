@@ -3,6 +3,10 @@ pragma solidity 0.8.17;
 
 import "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
 
+interface ILazyArb {
+    function transferOwnership(address owner_) external;
+}
+
 contract LazyArbFactory {
     address public immutable beacon;
     address public immutable safeManager;
@@ -14,6 +18,7 @@ contract LazyArbFactory {
     address public immutable dai_ethJoin;
     address public immutable dai_daiJoin;
     address public immutable oracleRelayer;
+    address public immutable connector;
 
     constructor(
         address beacon_,
@@ -25,7 +30,8 @@ contract LazyArbFactory {
         address dai_jug_,
         address dai_ethJoin_,
         address dai_daiJoin_,
-        address oracleRelayer_
+        address oracleRelayer_,
+        address connector_
     ) {
         require(beacon_ != address(0), "LazyArbFactory/null-beacon");
         require(safeManager_ != address(0), "LazyArbFactory/null-safe-manager");
@@ -43,6 +49,7 @@ contract LazyArbFactory {
             oracleRelayer_ != address(0),
             "LazyArbFactory/null-oracle-relayer"
         );
+        require(connector_ != address(0), "LazyArbFactory/null-connector");
 
         beacon = beacon_;
         safeManager = safeManager_;
@@ -54,6 +61,7 @@ contract LazyArbFactory {
         dai_ethJoin = dai_ethJoin_;
         dai_daiJoin = dai_daiJoin_;
         oracleRelayer = oracleRelayer_;
+        connector = connector_;
     }
 
     function createLazyArb(
@@ -64,8 +72,7 @@ contract LazyArbFactory {
             new BeaconProxy(
                 beacon,
                 abi.encodeWithSignature(
-                    "initialize(address,uint256,uint256,address,address,address,address,address,address,address,address,address)",
-                    msg.sender,
+                    "initialize(uint256,uint256,address,address,address,address,address,address,address,address,address,address)",
                     minCRatio_,
                     maxCRatio_,
                     safeManager,
@@ -76,9 +83,12 @@ contract LazyArbFactory {
                     dai_jug,
                     dai_ethJoin,
                     dai_daiJoin,
-                    oracleRelayer
+                    oracleRelayer,
+                    connector
                 )
             )
         );
+
+        ILazyArb(lazyArb).transferOwnership(msg.sender);
     }
 }

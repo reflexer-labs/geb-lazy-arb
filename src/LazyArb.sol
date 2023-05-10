@@ -220,6 +220,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
     GemJoinLike public dai_ethJoin;
     DaiJoinLike public dai_daiJoin;
     OracleRelayerLike public oracleRelayer;
+    IConnector public connector;
 
     uint256 public safe;
     uint256 public cdp;
@@ -231,7 +232,6 @@ contract LazyArb is ReentrancyGuardUpgradeable {
     }
 
     /// @notice Initialize LazyArb contract
-    /// @param owner_ address
     /// @param minCRatio_ uint256
     /// @param maxCRatio_ uint256
     /// @param safeManager_ address
@@ -243,8 +243,8 @@ contract LazyArb is ReentrancyGuardUpgradeable {
     /// @param dai_ethJoin_ address
     /// @param dai_daiJoin_ address
     /// @param oracleRelayer_ address
+    /// @param connector_ address
     function initialize(
-        address owner_,
         uint256 minCRatio_,
         uint256 maxCRatio_,
         address safeManager_,
@@ -255,9 +255,9 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         address dai_jug_,
         address dai_ethJoin_,
         address dai_daiJoin_,
-        address oracleRelayer_
+        address oracleRelayer_,
+        address connector_
     ) external initializer {
-        require(owner_ != address(0), "LazyArb/null-owner");
         require(minCRatio_ < maxCRatio_ && maxCRatio_ < MAX_CRATIO, "LazyArb/invalid-cRatio");
         require(safeManager_ != address(0), "LazyArb/null-safe-manager");
         require(taxCollector_ != address(0), "LazyArb/null-tax-collector");
@@ -268,8 +268,9 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         require(dai_ethJoin_ != address(0), "LazyArb/null-dai-eth-join");
         require(dai_daiJoin_ != address(0), "LazyArb/null-dai-dai-join");
         require(oracleRelayer_ != address(0), "LazyArb/null-oracle-relayer");
+        require(connector_ != address(0), "LazyArb/null-connector");
 
-        owner = owner_;
+        owner = msg.sender;
         minCRatio = minCRatio_;
         maxCRatio = maxCRatio_;
 
@@ -278,6 +279,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         ethJoin = CollateralJoinLike(ethJoin_);
         coinJoin = CoinJoinLike(coinJoin_);
         oracleRelayer = OracleRelayerLike(oracleRelayer_);
+        connector = IConnector(connector_);
 
         safeEngine = SAFEEngineLike(safeManager.safeEngine());
         systemCoin = coinJoin.systemCoin();
@@ -295,6 +297,20 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         oracleRelayer.redemptionPrice();
     }
 
+    /// @notice Transfer ownership to new owner
+    /// @param owner_ New owner address
+    function transferOwnership(address owner_) external onlyOwner {
+        require(owner_ != address(0), "LazyArb/null-owner");
+        owner = owner_;
+    }
+
+    /// @notice Sets minCRatio, maxCRatio value
+    /// @param connector_ New connector address
+    function setConnector(address connector_) external onlyOwner {
+        require(connector_ != address(0), "LazyArb/null-connector");
+        connector = IConnector(connector_);
+    }
+
     /// @notice Sets minCRatio, maxCRatio value
     /// @param minCRatio_ New minCRatio value
     /// @param maxCRatio_ New maxCRatio value
@@ -310,8 +326,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
     }
 
     function lockETHAndGenerateDebt(
-        uint256 minAmount,
-        address connector
+        uint256 minAmount
     ) public onlyOwner {
         require(
             oracleRelayer.redemptionRate() < RAY,
@@ -332,12 +347,11 @@ contract LazyArb is ReentrancyGuardUpgradeable {
             0
         );
 
-        rebalanceShort(minAmount, connector);
+        rebalanceShort(minAmount);
     }
 
     function rebalanceShort(
-        uint256 minAmount,
-        address connector
+        uint256 minAmount
     ) public {
         require(status == Status.Short, "LazyArb/status-not-short");
 
@@ -374,7 +388,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
             );
 
             exitRaiAndConvertToDai(deltaWad, minAmount);
-            depositDai(connector);
+            depositDai();
         } else {
             uint256 deltaWad = currentDebtAmount - targetDebtAmount;
             uint256 requiredDAIAmount = uniswapV3Quoter.quoteExactOutputSingle(
@@ -385,10 +399,10 @@ contract LazyArb is ReentrancyGuardUpgradeable {
                 0
             );
 
-            IERC20Upgradeable lpToken = IERC20Upgradeable(IConnector(connector).lpToken());
+            IERC20Upgradeable lpToken = IERC20Upgradeable(connector.lpToken());
             uint256 lpTokenBalance = lpToken.balanceOf(address(this));
-            lpToken.approve(connector, lpTokenBalance);
-            IConnector(connector).withdraw(requiredDAIAmount);
+            lpToken.approve(address(connector), lpTokenBalance);
+            connector.withdraw(requiredDAIAmount);
 
             uniswapSwap(address(DAI), address(systemCoin), DAI.balanceOf(address(this)), minAmount);
 
@@ -404,22 +418,16 @@ contract LazyArb is ReentrancyGuardUpgradeable {
 
     /// @notice Repays debt and frees ETH (sends it to msg.sender)
     /// @param minRaiAmount uint256 - Minimum RAI amount expect in swap
-    /// @param connectors address[] - List of connectors
     function repayDebtAndFreeETH(
-        uint256 minRaiAmount,
-        address[] calldata connectors
+        uint256 minRaiAmount
     ) public onlyOwner {
         require(status == Status.Short, "LazyArb/status-not-short");
         status = Status.None;
 
-        uint256 length = connectors.length;
-        for (uint256 i; i != length; ++i) {
-            IConnector connector = IConnector(connectors[i]);
-            IERC20Upgradeable lpToken = IERC20Upgradeable(connector.lpToken());
-            uint256 lpTokenBalance = lpToken.balanceOf(address(this));
-            lpToken.approve(address(connector), lpTokenBalance);
-            connector.withdrawAll();
-        }
+        IERC20Upgradeable lpToken = IERC20Upgradeable(connector.lpToken());
+        uint256 lpTokenBalance = lpToken.balanceOf(address(this));
+        lpToken.approve(address(connector), lpTokenBalance);
+        connector.withdrawAll();
 
         uint256 daiBalance = DAI.balanceOf(address(this));
         uniswapSwap(address(DAI), address(systemCoin), daiBalance, minRaiAmount);
@@ -467,9 +475,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         ethJoin.collateral().withdraw(depositedCollateralToken);
     }
 
-    function lockETHAndDraw(
-        address connector
-    ) public onlyOwner {
+    function lockETHAndDraw() public onlyOwner {
         require(
             oracleRelayer.redemptionRate() >= RAY,
             "LazyArb/redemption-rate-positive"
@@ -487,12 +493,10 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         // Locks WETH amount into the CDP and generates debt
         dai_manager.frob(cdp, toInt(collateralBalance), 0);
 
-        rebalanceLong(connector);
+        rebalanceLong();
     }
 
-    function rebalanceLong(
-        address connector
-    ) public {
+    function rebalanceLong() public {
         require(status == Status.Long, "LazyArb/status-not-long");
 
         address urn = dai_manager.urns(cdp);
@@ -531,13 +535,13 @@ contract LazyArb is ReentrancyGuardUpgradeable {
             dai_manager.frob(cdp, 0, _getDrawDart(vat, urn, ilk, wadD));
 
             exitDai(wadD);
-            depositDai(connector);
+            depositDai();
         } else {
             uint256 wadD = currentDebtAmount - targetDebtAmount;
-            IERC20Upgradeable lpToken = IERC20Upgradeable(IConnector(connector).lpToken());
+            IERC20Upgradeable lpToken = IERC20Upgradeable(connector.lpToken());
             uint256 lpTokenBalance = lpToken.balanceOf(address(this));
-            lpToken.approve(connector, lpTokenBalance);
-            IConnector(connector).withdraw(wadD);
+            lpToken.approve(address(connector), lpTokenBalance);
+            connector.withdraw(wadD);
             wadD = DAI.balanceOf(address(this));
 
             // Joins DAI amount into the vat
@@ -552,19 +556,14 @@ contract LazyArb is ReentrancyGuardUpgradeable {
     }
 
     function wipeAndFreeETH(
-        address[] calldata connectors
     ) public onlyOwner {
         require(status == Status.Long, "LazyArb/status-not-long");
         status = Status.None;
 
-        uint256 length = connectors.length;
-        for (uint256 i; i != length; ++i) {
-            IConnector connector = IConnector(connectors[i]);
-            IERC20Upgradeable lpToken = IERC20Upgradeable(connector.lpToken());
-            uint256 lpTokenBalance = lpToken.balanceOf(address(this));
-            lpToken.approve(address(connector), lpTokenBalance);
-            connector.withdrawAll();
-        }
+        IERC20Upgradeable lpToken = IERC20Upgradeable(connector.lpToken());
+        uint256 lpTokenBalance = lpToken.balanceOf(address(this));
+        lpToken.approve(address(connector), lpTokenBalance);
+        connector.withdrawAll();
 
         uint256 daiBalance = DAI.balanceOf(address(this));
 
@@ -613,20 +612,18 @@ contract LazyArb is ReentrancyGuardUpgradeable {
     }
 
     function flip(
-        uint256 minAmount,
-        address[] calldata connectors,
-        address connector
+        uint256 minAmount
     ) external {
         if (oracleRelayer.redemptionRate() < RAY) {
             require(status == Status.Long, "LazyArb/status-not-long");
 
-            wipeAndFreeETH(connectors);
-            lockETHAndGenerateDebt(minAmount, connector);
+            wipeAndFreeETH();
+            lockETHAndGenerateDebt(minAmount);
         } else {
             require(status == Status.Short, "LazyArb/status-not-short");
 
-            repayDebtAndFreeETH(minAmount, connectors);
-            lockETHAndDraw(connector);
+            repayDebtAndFreeETH(minAmount);
+            lockETHAndDraw();
         }
     }
 
@@ -660,11 +657,11 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         dai_daiJoin.exit(address(this), wadD);
     }
 
-    function depositDai(address connector) internal {
+    function depositDai() internal {
         uint256 daiBalance = DAI.balanceOf(address(this));
-        DAI.approve(connector, daiBalance);
+        DAI.approve(address(connector), daiBalance);
 
-        IConnector(connector).deposit(daiBalance);
+        connector.deposit(daiBalance);
     }
 
     function uniswapSwap(address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOutMin) internal {

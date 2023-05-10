@@ -43,6 +43,8 @@ contract LazyArbTest is Test {
         mockOracle = new MockOracle(oracle);
         mockOracle.setRedemptionRate(1e27);
 
+        connector = new CurveConnector(DAI, CurvePool, CurveLP);
+
         implementation = new LazyArb();
         beacon = new UpgradeableBeacon(address(implementation));
         factory = new LazyArbFactory(
@@ -55,11 +57,10 @@ contract LazyArbTest is Test {
             dai_jug,
             dai_ethJoin,
             dai_daiJoin,
-            address(mockOracle)
+            address(mockOracle),
+            address(connector)
         );
         lazyArb = LazyArb(payable(factory.createLazyArb(500, 600)));
-
-        connector = new CurveConnector(DAI, CurvePool, CurveLP);
 
         safeEngine = SAFEEngineLike(ManagerLike(safeManager).safeEngine());
 
@@ -75,7 +76,7 @@ contract LazyArbTest is Test {
         depositETH(caller, depositAmount);
         startHoax(caller);
         mockOracle.setRedemptionRate(0.998e27);
-        lazyArb.lockETHAndGenerateDebt(8000 * 1e18, address(connector));
+        lazyArb.lockETHAndGenerateDebt(8000 * 1e18);
         vm.stopPrank();
     }
 
@@ -83,7 +84,7 @@ contract LazyArbTest is Test {
         depositETH(caller, depositAmount);
         startHoax(caller);
         mockOracle.setRedemptionRate(1.002e27);
-        lazyArb.lockETHAndDraw(address(connector));
+        lazyArb.lockETHAndDraw();
         vm.stopPrank();
     }
 
@@ -104,7 +105,7 @@ contract LazyArbTest is Test {
         startHoax(keeper);
         mockOracle.setRedemptionRate(0.998e27);
         vm.expectRevert("LazyArb/not-owner");
-        lazyArb.lockETHAndGenerateDebt(8000 * 1e18, address(connector));
+        lazyArb.lockETHAndGenerateDebt(8000 * 1e18);
         vm.stopPrank();
     }
 
@@ -112,7 +113,7 @@ contract LazyArbTest is Test {
         depositETH(user, 30 ether);
         startHoax(user);
         mockOracle.setRedemptionRate(0.998e27);
-        lazyArb.lockETHAndGenerateDebt(8000 * 1e18, address(connector));
+        lazyArb.lockETHAndGenerateDebt(8000 * 1e18);
         vm.stopPrank();
 
         assertEq(address(lazyArb).balance, 0);
@@ -128,7 +129,7 @@ contract LazyArbTest is Test {
     function testRebalanceShort_not_short() public {
         startHoax(keeper);
         vm.expectRevert("LazyArb/status-not-short");
-        lazyArb.rebalanceShort(0, address(connector));
+        lazyArb.rebalanceShort(0);
         vm.stopPrank();
     }
 
@@ -137,7 +138,7 @@ contract LazyArbTest is Test {
 
         startHoax(keeper);
         vm.expectRevert("LazyArb/cRatio-in-range");
-        lazyArb.rebalanceShort(0, address(connector));
+        lazyArb.rebalanceShort(0);
         vm.stopPrank();
     }
 
@@ -148,7 +149,7 @@ contract LazyArbTest is Test {
         lazyArb.setCRatio(600, 700);
 
         startHoax(keeper);
-        lazyArb.rebalanceShort(0, address(connector));
+        lazyArb.rebalanceShort(0);
         vm.stopPrank();
 
         assertEq(address(lazyArb).balance, 0);
@@ -168,7 +169,7 @@ contract LazyArbTest is Test {
         lazyArb.setCRatio(400, 500);
 
         startHoax(keeper);
-        lazyArb.rebalanceShort(0, address(connector));
+        lazyArb.rebalanceShort(0);
         vm.stopPrank();
 
         assertEq(address(lazyArb).balance, 0);
@@ -185,16 +186,14 @@ contract LazyArbTest is Test {
         depositETH(user, 30 ether);
         startHoax(user);
         mockOracle.setRedemptionRate(0.998e27);
-        lazyArb.lockETHAndGenerateDebt(8000 * 1e18, address(connector));
+        lazyArb.lockETHAndGenerateDebt(8000 * 1e18);
         vm.stopPrank();
 
         skip(10 days);
 
         startHoax(keeper);
-        address[] memory connectors = new address[](1);
-        connectors[0] = address(connector);
         vm.expectRevert("LazyArb/not-owner");
-        lazyArb.repayDebtAndFreeETH(4450 * 1e18, connectors);
+        lazyArb.repayDebtAndFreeETH(4450 * 1e18);
 
         vm.stopPrank();
     }
@@ -203,13 +202,11 @@ contract LazyArbTest is Test {
         depositETH(user, 30 ether);
         startHoax(user);
         mockOracle.setRedemptionRate(0.998e27);
-        lazyArb.lockETHAndGenerateDebt(8000 * 1e18, address(connector));
+        lazyArb.lockETHAndGenerateDebt(8000 * 1e18);
 
         skip(10 days);
 
-        address[] memory connectors = new address[](1);
-        connectors[0] = address(connector);
-        lazyArb.repayDebtAndFreeETH(4450 * 1e18, connectors);
+        lazyArb.repayDebtAndFreeETH(4450 * 1e18);
 
         vm.stopPrank();
 
@@ -228,7 +225,7 @@ contract LazyArbTest is Test {
         startHoax(keeper);
         mockOracle.setRedemptionRate(1.002e27);
         vm.expectRevert("LazyArb/not-owner");
-        lazyArb.lockETHAndDraw(address(connector));
+        lazyArb.lockETHAndDraw();
         vm.stopPrank();
     }
 
@@ -236,7 +233,7 @@ contract LazyArbTest is Test {
         depositETH(user, 30 ether);
         startHoax(user);
         mockOracle.setRedemptionRate(1.002e27);
-        lazyArb.lockETHAndDraw(address(connector));
+        lazyArb.lockETHAndDraw();
         vm.stopPrank();
 
         assertEq(address(lazyArb).balance, 0);
@@ -254,16 +251,14 @@ contract LazyArbTest is Test {
         depositETH(user, 30 ether);
         startHoax(user);
         mockOracle.setRedemptionRate(1.002e27);
-        lazyArb.lockETHAndDraw(address(connector));
+        lazyArb.lockETHAndDraw();
         vm.stopPrank();
 
         skip(10 days);
 
         startHoax(keeper);
-        address[] memory connectors = new address[](1);
-        connectors[0] = address(connector);
         vm.expectRevert("LazyArb/not-owner");
-        lazyArb.wipeAndFreeETH(connectors);
+        lazyArb.wipeAndFreeETH();
 
         vm.stopPrank();
     }
@@ -272,13 +267,11 @@ contract LazyArbTest is Test {
         depositETH(user, 30 ether);
         startHoax(user);
         mockOracle.setRedemptionRate(1.002e27);
-        lazyArb.lockETHAndDraw(address(connector));
+        lazyArb.lockETHAndDraw();
 
         skip(10 days);
 
-        address[] memory connectors = new address[](1);
-        connectors[0] = address(connector);
-        lazyArb.wipeAndFreeETH(connectors);
+        lazyArb.wipeAndFreeETH();
 
         vm.stopPrank();
 
@@ -296,7 +289,7 @@ contract LazyArbTest is Test {
     function testRebalanceLong_not_long() public {
         startHoax(keeper);
         vm.expectRevert("LazyArb/status-not-long");
-        lazyArb.rebalanceLong(address(connector));
+        lazyArb.rebalanceLong();
         vm.stopPrank();
     }
 
@@ -305,7 +298,7 @@ contract LazyArbTest is Test {
 
         startHoax(keeper);
         vm.expectRevert("LazyArb/cRatio-in-range");
-        lazyArb.rebalanceLong(address(connector));
+        lazyArb.rebalanceLong();
         vm.stopPrank();
     }
 
@@ -316,7 +309,7 @@ contract LazyArbTest is Test {
         lazyArb.setCRatio(600, 700);
 
         startHoax(keeper);
-        lazyArb.rebalanceLong(address(connector));
+        lazyArb.rebalanceLong();
         vm.stopPrank();
 
         assertEq(address(lazyArb).balance, 0);
@@ -337,7 +330,7 @@ contract LazyArbTest is Test {
         lazyArb.setCRatio(400, 500);
 
         startHoax(keeper);
-        lazyArb.rebalanceLong(address(connector));
+        lazyArb.rebalanceLong();
         vm.stopPrank();
 
         assertEq(address(lazyArb).balance, 0);
@@ -356,9 +349,7 @@ contract LazyArbTest is Test {
 
         vm.expectRevert("LazyArb/status-not-long");
         hoax(user);
-        address[] memory connectors = new address[](1);
-        connectors[0] = address(connector);
-        lazyArb.flip(0, connectors, address(connector));
+        lazyArb.flip(0);
     }
 
     function testFlip_fail_not_short() public {
@@ -366,9 +357,7 @@ contract LazyArbTest is Test {
 
         vm.expectRevert("LazyArb/status-not-short");
         hoax(user);
-        address[] memory connectors = new address[](1);
-        connectors[0] = address(connector);
-        lazyArb.flip(0, connectors, address(connector));
+        lazyArb.flip(0);
     }
 
     function testFlip_success_long_to_short() public {
@@ -376,9 +365,7 @@ contract LazyArbTest is Test {
 
         startHoax(user);
         mockOracle.setRedemptionRate(0.998e27);
-        address[] memory connectors = new address[](1);
-        connectors[0] = address(connector);
-        lazyArb.flip(0, connectors, address(connector));
+        lazyArb.flip(0);
         vm.stopPrank();
 
         assertEq(address(lazyArb).balance, 0);
@@ -403,9 +390,7 @@ contract LazyArbTest is Test {
 
         startHoax(user);
         mockOracle.setRedemptionRate(1.002e27);
-        address[] memory connectors = new address[](1);
-        connectors[0] = address(connector);
-        lazyArb.flip(0, connectors, address(connector));
+        lazyArb.flip(0);
         vm.stopPrank();
 
         assertEq(address(lazyArb).balance, 0);
