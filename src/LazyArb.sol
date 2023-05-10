@@ -309,11 +309,6 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         return oracleRelayer.redemptionRate();
     }
 
-    /// @notice Deposit ETH
-    function depositETH() external payable onlyOwner returns (bool success) {
-        return true;
-    }
-
     function lockETHAndGenerateDebt(
         uint256 minAmount,
         address connector
