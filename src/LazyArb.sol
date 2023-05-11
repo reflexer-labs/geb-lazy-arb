@@ -20,7 +20,11 @@ abstract contract CollateralLike {
 }
 
 abstract contract ManagerLike {
-    function safeCan(address, uint256, address) public view virtual returns (uint256);
+    function safeCan(
+        address,
+        uint256,
+        address
+    ) public view virtual returns (uint256);
 
     function collateralTypes(uint256) public view virtual returns (bytes32);
 
@@ -54,15 +58,25 @@ abstract contract ManagerLike {
 }
 
 abstract contract SAFEEngineLike {
-    function canModifySAFE(address, address) public view virtual returns (uint256);
+    function canModifySAFE(
+        address,
+        address
+    ) public view virtual returns (uint256);
 
     function collateralTypes(
         bytes32
-    ) public view virtual returns (uint256, uint256, uint256, uint256, uint256, uint256);
+    )
+        public
+        view
+        virtual
+        returns (uint256, uint256, uint256, uint256, uint256, uint256);
 
     function coinBalance(address) public view virtual returns (uint256);
 
-    function safes(bytes32, address) public view virtual returns (uint256, uint256);
+    function safes(
+        bytes32,
+        address
+    ) public view virtual returns (uint256, uint256);
 
     function modifySAFECollateralization(
         bytes32,
@@ -125,9 +139,15 @@ abstract contract OracleRelayerLike {
 }
 
 abstract contract PriceFeedLike {
-    function priceSource() virtual public view returns (address);
-    function read() virtual public view returns (uint256);
-    function getResultWithValidity() virtual external view returns (uint256,bool);
+    function priceSource() public view virtual returns (address);
+
+    function read() public view virtual returns (uint256);
+
+    function getResultWithValidity()
+        external
+        view
+        virtual
+        returns (uint256, bool);
 }
 
 abstract contract TaxCollectorLike {
@@ -136,52 +156,85 @@ abstract contract TaxCollectorLike {
 
 interface GemLike {
     function approve(address, uint256) external;
+
     function transfer(address, uint256) external;
+
     function transferFrom(address, address, uint256) external;
+
     function deposit() external payable;
+
     function withdraw(uint256) external;
 }
 
 interface DaiManagerLike {
     function cdpCan(address, uint256, address) external view returns (uint256);
+
     function ilks(uint256) external view returns (bytes32);
+
     function owns(uint256) external view returns (address);
+
     function urns(uint256) external view returns (address);
+
     function vat() external view returns (address);
+
     function open(bytes32, address) external returns (uint256);
+
     function give(uint256, address) external;
+
     function cdpAllow(uint256, address, uint256) external;
+
     function urnAllow(address, uint256) external;
+
     function frob(uint256, int, int) external;
+
     function flux(uint256, address, uint256) external;
+
     function move(uint256, address, uint256) external;
+
     function exit(address, uint256, address, uint256) external;
+
     function quit(uint256, address) external;
+
     function enter(address, uint256) external;
+
     function shift(uint256, uint256) external;
 }
 
 interface VatLike {
     function can(address, address) external view returns (uint256);
-    function ilks(bytes32) external view returns (uint256, uint256, uint256, uint256, uint256);
+
+    function ilks(
+        bytes32
+    ) external view returns (uint256, uint256, uint256, uint256, uint256);
+
     function dai(address) external view returns (uint256);
+
     function urns(bytes32, address) external view returns (uint256, uint256);
+
     function frob(bytes32, address, address, address, int, int) external;
+
     function hope(address) external;
+
     function move(address, address, uint256) external;
 }
 
 interface GemJoinLike {
     function dec() external returns (uint256);
+
     function gem() external returns (GemLike);
+
     function join(address, uint256) external payable;
+
     function exit(address, uint256) external;
 }
 
 interface DaiJoinLike {
     function vat() external returns (VatLike);
+
     function dai() external returns (GemLike);
+
     function join(address, uint256) external payable;
+
     function exit(address, uint256) external;
 }
 
@@ -201,13 +254,15 @@ contract LazyArb is ReentrancyGuardUpgradeable {
     uint256 public maxCRatio;
 
     uint256 public constant HUNDRED = 100;
-    uint256 public constant WAD = 10**18;
+    uint256 public constant WAD = 10 ** 18;
     uint256 private constant RAY = 10 ** 27;
     uint256 public constant MAX_CRATIO = 1000;
     ISwapRouter private constant uniswapV3Router =
         ISwapRouter(0xE592427A0AEce92De3Edee1F18E0157C05861564);
-    IQuoter private constant uniswapV3Quoter = IQuoter(0xb27308f9F90D607463bb33eA1BeBb41C27CE5AB6);
-    IERC20Upgradeable private constant DAI = IERC20Upgradeable(0x6B175474E89094C44Da98b954EedeAC495271d0F);
+    IQuoter private constant uniswapV3Quoter =
+        IQuoter(0xb27308f9F90D607463bb33eA1BeBb41C27CE5AB6);
+    IERC20Upgradeable private constant DAI =
+        IERC20Upgradeable(0x6B175474E89094C44Da98b954EedeAC495271d0F);
 
     ManagerLike public safeManager;
     SAFEEngineLike public safeEngine;
@@ -226,7 +281,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
     uint256 public cdp;
     Status public status;
 
-    modifier onlyOwner {
+    modifier onlyOwner() {
         require(msg.sender == owner, "LazyArb/not-owner");
         _;
     }
@@ -258,7 +313,10 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         address oracleRelayer_,
         address connector_
     ) external initializer {
-        require(minCRatio_ < maxCRatio_ && maxCRatio_ < MAX_CRATIO, "LazyArb/invalid-cRatio");
+        require(
+            minCRatio_ < maxCRatio_ && maxCRatio_ < MAX_CRATIO,
+            "LazyArb/invalid-cRatio"
+        );
         require(safeManager_ != address(0), "LazyArb/null-safe-manager");
         require(taxCollector_ != address(0), "LazyArb/null-tax-collector");
         require(ethJoin_ != address(0), "LazyArb/null-eth-join");
@@ -314,8 +372,14 @@ contract LazyArb is ReentrancyGuardUpgradeable {
     /// @notice Sets minCRatio, maxCRatio value
     /// @param minCRatio_ New minCRatio value
     /// @param maxCRatio_ New maxCRatio value
-    function setCRatio(uint256 minCRatio_, uint256 maxCRatio_) external onlyOwner {
-        require(minCRatio_ < maxCRatio_ && maxCRatio_ < MAX_CRATIO, "LazyArb/invalid-cRatio");
+    function setCRatio(
+        uint256 minCRatio_,
+        uint256 maxCRatio_
+    ) external onlyOwner {
+        require(
+            minCRatio_ < maxCRatio_ && maxCRatio_ < MAX_CRATIO,
+            "LazyArb/invalid-cRatio"
+        );
         minCRatio = minCRatio_;
         maxCRatio = maxCRatio_;
     }
@@ -325,15 +389,11 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         return oracleRelayer.redemptionRate();
     }
 
-    function lockETHAndGenerateDebt(
-        uint256 minAmount
-    ) external onlyOwner {
+    function lockETHAndGenerateDebt(uint256 minAmount) external onlyOwner {
         _lockETHAndGenerateDebt(minAmount);
     }
 
-    function rebalanceShort(
-        uint256 minAmount
-    ) public {
+    function rebalanceShort(uint256 minAmount) public {
         require(status == Status.Short, "LazyArb/status-not-short");
 
         address safeHandler = safeManager.safes(safe);
@@ -345,19 +405,36 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         {
             uint256 priceFeedValue;
             {
-                (address ethFSM,,) = oracleRelayer.collateralTypes(collateralType);
+                (address ethFSM, , ) = oracleRelayer.collateralTypes(
+                    collateralType
+                );
                 priceFeedValue = PriceFeedLike(ethFSM).read();
             }
 
-            (uint256 depositedCollateralToken, ) = safeEngine.safes(collateralType, safeHandler);
-            uint256 totalCollateral = (depositedCollateralToken * priceFeedValue) / WAD;
+            (uint256 depositedCollateralToken, ) = safeEngine.safes(
+                collateralType,
+                safeHandler
+            );
+            uint256 totalCollateral = (depositedCollateralToken *
+                priceFeedValue) / WAD;
 
-            currentDebtAmount = _getRepaidAllDebt(safeHandler, safeHandler, collateralType);
-            uint256 currentCRatio = ((currentDebtAmount * oracleRelayer.redemptionPrice()) / RAY * MAX_CRATIO) / totalCollateral;
-            require(currentCRatio < minCRatio || currentCRatio > maxCRatio, "LazyArb/cRatio-in-range");
+            currentDebtAmount = _getRepaidAllDebt(
+                safeHandler,
+                safeHandler,
+                collateralType
+            );
+            uint256 currentCRatio = (((currentDebtAmount *
+                oracleRelayer.redemptionPrice()) / RAY) * MAX_CRATIO) /
+                totalCollateral;
+            require(
+                currentCRatio < minCRatio || currentCRatio > maxCRatio,
+                "LazyArb/cRatio-in-range"
+            );
 
             uint256 targetCRatio = (minCRatio + maxCRatio) / 2;
-            targetDebtAmount = ((targetCRatio * totalCollateral) / MAX_CRATIO * RAY) / oracleRelayer.redemptionPrice();
+            targetDebtAmount =
+                (((targetCRatio * totalCollateral) / MAX_CRATIO) * RAY) /
+                oracleRelayer.redemptionPrice();
         }
 
         if (targetDebtAmount > currentDebtAmount) {
@@ -385,7 +462,12 @@ contract LazyArb is ReentrancyGuardUpgradeable {
             lpToken.approve(address(connector), lpTokenBalance);
             connector.withdraw(requiredDAIAmount);
 
-            uniswapSwap(address(DAI), address(systemCoin), DAI.balanceOf(address(this)), minAmount);
+            uniswapSwap(
+                address(DAI),
+                address(systemCoin),
+                DAI.balanceOf(address(this)),
+                minAmount
+            );
 
             uint256 raiBalance = systemCoin.balanceOf(address(this));
             _coinJoin_join(safeHandler, raiBalance);
@@ -399,9 +481,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
 
     /// @notice Repays debt and frees ETH (sends it to msg.sender)
     /// @param minRaiAmount uint256 - Minimum RAI amount expect in swap
-    function repayDebtAndFreeETH(
-        uint256 minRaiAmount
-    ) external onlyOwner {
+    function repayDebtAndFreeETH(uint256 minRaiAmount) external onlyOwner {
         _repayDebtAndFreeETH(minRaiAmount);
     }
 
@@ -415,7 +495,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         address urn = dai_manager.urns(cdp);
         address vat = dai_manager.vat();
         bytes32 ilk = dai_manager.ilks(cdp);
-        (uint256 depositedCollateral,) = VatLike(vat).urns(ilk, urn);
+        (uint256 depositedCollateral, ) = VatLike(vat).urns(ilk, urn);
 
         uint256 targetDebtAmount;
         uint256 currentDebtAmount;
@@ -424,21 +504,30 @@ contract LazyArb is ReentrancyGuardUpgradeable {
             uint256 priceFeedValue;
             {
                 bytes32 collateralType = safeManager.collateralTypes(safe);
-                (address ethFSM,,) = oracleRelayer.collateralTypes(collateralType);
+                (address ethFSM, , ) = oracleRelayer.collateralTypes(
+                    collateralType
+                );
                 priceFeedValue = PriceFeedLike(ethFSM).read();
             }
 
-            uint256 totalCollateral = (depositedCollateral * priceFeedValue) / WAD;
+            uint256 totalCollateral = (depositedCollateral * priceFeedValue) /
+                WAD;
 
             currentDebtAmount = _getWipeAllWad(vat, urn, urn, ilk);
             {
-                uint256 currentCRatio = (currentDebtAmount * MAX_CRATIO) / totalCollateral;
-                require(currentCRatio < minCRatio || currentCRatio > maxCRatio, "LazyArb/cRatio-in-range");
+                uint256 currentCRatio = (currentDebtAmount * MAX_CRATIO) /
+                    totalCollateral;
+                require(
+                    currentCRatio < minCRatio || currentCRatio > maxCRatio,
+                    "LazyArb/cRatio-in-range"
+                );
             }
 
             {
                 uint256 targetCRatio = (minCRatio + maxCRatio) / 2;
-                targetDebtAmount = (targetCRatio * totalCollateral) / MAX_CRATIO;
+                targetDebtAmount =
+                    (targetCRatio * totalCollateral) /
+                    MAX_CRATIO;
             }
         }
 
@@ -460,22 +549,15 @@ contract LazyArb is ReentrancyGuardUpgradeable {
             // Joins DAI amount into the vat
             _daiJoin_join(urn, wadD);
             // Paybacks debt to the CDP and unlocks WETH amount from it
-            dai_manager.frob(
-                cdp,
-                0,
-                -_getDrawDart(vat, urn, ilk, wadD)
-            );
+            dai_manager.frob(cdp, 0, -_getDrawDart(vat, urn, ilk, wadD));
         }
     }
 
-    function wipeAndFreeETH(
-    ) external onlyOwner {
+    function wipeAndFreeETH() external onlyOwner {
         _wipeAndFreeETH();
     }
 
-    function flip(
-        uint256 minAmount
-    ) external {
+    function flip(uint256 minAmount) external {
         if (oracleRelayer.redemptionRate() < RAY) {
             require(status == Status.Long, "LazyArb/status-not-long");
 
@@ -504,17 +586,12 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         uint256 collateralBalance = address(this).balance;
         ethJoin_join(safeHandler, collateralBalance);
         // Locks WETH amount into the SAFE
-        modifySAFECollateralization(
-            toInt(collateralBalance),
-            0
-        );
+        modifySAFECollateralization(toInt(collateralBalance), 0);
 
         rebalanceShort(minAmount);
     }
 
-    function _repayDebtAndFreeETH(
-        uint256 minRaiAmount
-    ) internal {
+    function _repayDebtAndFreeETH(uint256 minRaiAmount) internal {
         require(status == Status.Short, "LazyArb/status-not-short");
         status = Status.None;
 
@@ -524,13 +601,22 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         connector.withdrawAll();
 
         uint256 daiBalance = DAI.balanceOf(address(this));
-        uniswapSwap(address(DAI), address(systemCoin), daiBalance, minRaiAmount);
+        uniswapSwap(
+            address(DAI),
+            address(systemCoin),
+            daiBalance,
+            minRaiAmount
+        );
 
         uint256 raiBalance = systemCoin.balanceOf(address(this));
 
         address safeHandler = safeManager.safes(safe);
         bytes32 collateralType = safeManager.collateralTypes(safe);
-        uint256 raiDebtAmount = _getRepaidAllDebt(safeHandler, safeHandler, collateralType);
+        uint256 raiDebtAmount = _getRepaidAllDebt(
+            safeHandler,
+            safeHandler,
+            collateralType
+        );
         if (raiBalance < raiDebtAmount) {
             uint256 missingRaiAmount = raiDebtAmount - raiBalance;
             address WETH = address(ethJoin.collateral());
@@ -541,19 +627,22 @@ contract LazyArb is ReentrancyGuardUpgradeable {
                 missingRaiAmount,
                 0
             );
-            modifySAFECollateralization(
-                -toInt(requiredETHAmount),
-                0
-            );
+            modifySAFECollateralization(-toInt(requiredETHAmount), 0);
             // Moves the amount from the SAFE handler to proxy's address
             transferCollateral(address(this), requiredETHAmount);
             // Exits WETH amount to proxy address as a token
             ethJoin.exit(address(this), requiredETHAmount);
             // Swap WETH to RAI
-            uniswapSwap(WETH, address(systemCoin), requiredETHAmount, missingRaiAmount);
+            uniswapSwap(
+                WETH,
+                address(systemCoin),
+                requiredETHAmount,
+                missingRaiAmount
+            );
         }
 
-        (uint256 depositedCollateralToken, uint256 generatedDebt) = safeEngine.safes(collateralType, safeHandler);
+        (uint256 depositedCollateralToken, uint256 generatedDebt) = safeEngine
+            .safes(collateralType, safeHandler);
         // Joins COIN amount into the safeEngine
         _coinJoin_join(safeHandler, raiDebtAmount);
         // Paybacks debt to the SAFE and unlocks WETH amount from it
@@ -615,28 +704,28 @@ contract LazyArb is ReentrancyGuardUpgradeable {
                 missingDaiAmount,
                 0
             );
-            dai_manager.frob(
-                cdp,
-                -toInt(requiredETHAmount),
-                0
-            );
+            dai_manager.frob(cdp, -toInt(requiredETHAmount), 0);
             // Moves the amount from the SAFE handler to proxy's address
             dai_manager.flux(cdp, address(this), requiredETHAmount);
             // Exits WETH amount to proxy address as a token
             dai_ethJoin.exit(address(this), requiredETHAmount);
             // Swap WETH to DAI
-            uniswapSwap(WETH, address(DAI), requiredETHAmount, missingDaiAmount);
+            uniswapSwap(
+                WETH,
+                address(DAI),
+                requiredETHAmount,
+                missingDaiAmount
+            );
         }
 
-        (uint256 depositedCollateral, uint256 art) = VatLike(vat).urns(ilk, urn);
+        (uint256 depositedCollateral, uint256 art) = VatLike(vat).urns(
+            ilk,
+            urn
+        );
         // Joins DAI amount into the vat
         _daiJoin_join(urn, daiDebtAmount);
         // Paybacks debt to the CDP and unlocks WETH amount from it
-        dai_manager.frob(
-            cdp,
-            -toInt(depositedCollateral),
-            -int(art)
-        );
+        dai_manager.frob(cdp, -toInt(depositedCollateral), -int(art));
         // Moves the amount from the CDP urn to proxy's address
         dai_manager.flux(cdp, address(this), depositedCollateral);
         // Exits WETH amount to proxy address as a token
@@ -659,7 +748,12 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         coinJoin.exit(address(this), deltaWad);
 
         uint256 systemCoinBalance = systemCoin.balanceOf(address(this));
-        uniswapSwap(address(systemCoin), address(DAI), systemCoinBalance, minDaiAmount);
+        uniswapSwap(
+            address(systemCoin),
+            address(DAI),
+            systemCoinBalance,
+            minDaiAmount
+        );
     }
 
     function exitDai(uint256 wadD) internal {
@@ -682,7 +776,12 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         connector.deposit(daiBalance);
     }
 
-    function uniswapSwap(address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOutMin) internal {
+    function uniswapSwap(
+        address tokenIn,
+        address tokenOut,
+        uint256 amountIn,
+        uint256 amountOutMin
+    ) internal {
         IERC20Upgradeable(tokenIn).approve(address(uniswapV3Router), amountIn);
         uniswapV3Router.exactInputSingle(
             ISwapRouter.ExactInputSingleParams({
@@ -736,10 +835,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
     /// @notice Transfer wad amount of safe collateral from the safe address to a dst address.
     /// @param dst address - destination address
     /// uint256 wad - amount
-    function transferCollateral(
-        address dst,
-        uint256 wad
-    ) internal {
+    function transferCollateral(address dst, uint256 wad) internal {
         safeManager.transferCollateral(safe, dst, wad);
     }
 
@@ -796,23 +892,28 @@ contract LazyArb is ReentrancyGuardUpgradeable {
     /// @param coin uint256 amount
     /// @param safeHandler address
     /// @param collateralType bytes32
-        /// @return deltaDebt
+    /// @return deltaDebt
     function _getRepaidDeltaDebt(
         uint256 coin,
         address safeHandler,
         bytes32 collateralType
     ) internal view returns (int deltaDebt) {
         // Gets actual rate from the safeEngine
-        (, uint256 rate,,,,) = safeEngine.collateralTypes(collateralType);
+        (, uint256 rate, , , , ) = safeEngine.collateralTypes(collateralType);
         require(rate > 0, "invalid-collateral-type");
 
         // Gets actual generatedDebt value of the safe
-        (, uint256 generatedDebt) = safeEngine.safes(collateralType, safeHandler);
+        (, uint256 generatedDebt) = safeEngine.safes(
+            collateralType,
+            safeHandler
+        );
 
         // Uses the whole coin balance in the safeEngine to reduce the debt
         deltaDebt = toInt(coin / rate);
         // Checks the calculated deltaDebt is not higher than safe.generatedDebt (total debt), otherwise uses its value
-        deltaDebt = uint256(deltaDebt) <= generatedDebt ? - deltaDebt : - toInt(generatedDebt);
+        deltaDebt = uint256(deltaDebt) <= generatedDebt
+            ? -deltaDebt
+            : -toInt(generatedDebt);
     }
 
     /// @notice Gets repaid debt (rate adjusted rate minus COIN balance available in usr's address)
@@ -826,9 +927,12 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         bytes32 collateralType
     ) internal view returns (uint256 wad) {
         // Gets actual rate from the safeEngine
-        (, uint256 rate,,,,) = safeEngine.collateralTypes(collateralType);
+        (, uint256 rate, , , , ) = safeEngine.collateralTypes(collateralType);
         // Gets actual generatedDebt value of the safe
-        (, uint256 generatedDebt) = safeEngine.safes(collateralType, safeHandler);
+        (, uint256 generatedDebt) = safeEngine.safes(
+            collateralType,
+            safeHandler
+        );
         // Gets actual coin amount in the safe
         uint256 coin = safeEngine.coinBalance(usr);
 
@@ -868,7 +972,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         bytes32 ilk
     ) internal view returns (uint256 wad) {
         // Gets actual rate from the vat
-        (, uint256 rate,,,) = VatLike(vat).ilks(ilk);
+        (, uint256 rate, , , ) = VatLike(vat).ilks(ilk);
         // Gets actual art value of the urn
         (, uint256 art) = VatLike(vat).urns(ilk, urn);
         // Gets actual dai amount in the urn
