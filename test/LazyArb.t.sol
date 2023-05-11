@@ -6,7 +6,8 @@ import "forge-std/Test.sol";
 import "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 import "../src/LazyArb.sol";
 import "../src/LazyArbFactory.sol";
-import "../src/connectors/CurveConnector.sol";
+import "../src/connectors/DaiCurveConnector.sol";
+import "../src/connectors/RaiCurveConnector.sol";
 import "../src/mock/MockOracle.sol";
 
 contract LazyArbTest is Test {
@@ -14,7 +15,8 @@ contract LazyArbTest is Test {
     UpgradeableBeacon public beacon;
     LazyArbFactory public factory;
     LazyArb public lazyArb;
-    CurveConnector public connector;
+    DaiCurveConnector public daiConnector;
+    RaiCurveConnector public raiConnector;
     MockOracle public mockOracle;
 
     address public user = address(0x1);
@@ -38,11 +40,9 @@ contract LazyArbTest is Test {
     address public oracle = address(0x4ed9C0dCa0479bC64d8f4EB3007126D5791f7851);
     address public RAI = address(0x03ab458634910AaD20eF5f1C8ee96F1D6ac54919);
     address public DAI = address(0x6B175474E89094C44Da98b954EedeAC495271d0F);
-    address public AaveLendigPool =
-        address(0x7d2768dE32b0b80b7a3454c06BdAc94A69DDc7A9);
-    address public CurvePool =
+    address public DAICurvePool =
         address(0xbEbc44782C7dB0a1A60Cb6fe97d0b483032FF1C7);
-    address public CurveLP =
+    address public DAICurveLP =
         address(0x6c3F90f043a72FA612cbac8115EE7e52BDe6E490);
 
     SAFEEngineLike public safeEngine;
@@ -53,7 +53,8 @@ contract LazyArbTest is Test {
         mockOracle = new MockOracle(oracle);
         mockOracle.setRedemptionRate(1e27);
 
-        connector = new CurveConnector(DAI, CurvePool, CurveLP);
+        daiConnector = new DaiCurveConnector();
+        raiConnector = new RaiCurveConnector();
 
         implementation = new LazyArb();
         beacon = new UpgradeableBeacon(address(implementation));
@@ -68,7 +69,8 @@ contract LazyArbTest is Test {
             dai_ethJoin,
             dai_daiJoin,
             address(mockOracle),
-            address(connector)
+            address(daiConnector),
+            address(raiConnector)
         );
         lazyArb = LazyArb(payable(factory.createLazyArb(500, 600)));
 

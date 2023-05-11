@@ -6,27 +6,27 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "../interface/IConnector.sol";
 import "../interface/curve/ICurveDeposit_3token.sol";
 
-contract CurveConnector is IConnector {
+contract DaiCurveConnector is IConnector {
     using SafeERC20 for IERC20;
 
     ICurveDeposit_3token public pool;
     uint256 private _tokenIndex;
 
-    constructor(address _underlying, address _pool, address _lpToken) {
-        underlying = _underlying;
-        pool = ICurveDeposit_3token(_pool);
+    constructor() {
+        underlying = 0x6B175474E89094C44Da98b954EedeAC495271d0F; // DAI
+        pool = ICurveDeposit_3token(0xbEbc44782C7dB0a1A60Cb6fe97d0b483032FF1C7); // 3pool
 
-        if (pool.coins(0) == _underlying) {
+        if (pool.coins(0) == underlying) {
             _tokenIndex = 0;
-        } else if (pool.coins(1) == _underlying) {
+        } else if (pool.coins(1) == underlying) {
             _tokenIndex = 1;
-        } else if (pool.coins(2) == _underlying) {
+        } else if (pool.coins(2) == underlying) {
             _tokenIndex = 2;
         } else {
             revert("invalid pool");
         }
 
-        lpToken = _lpToken;
+        lpToken = 0x6c3F90f043a72FA612cbac8115EE7e52BDe6E490; // 3Crv
     }
 
     function deposit(uint256 amount) external override {

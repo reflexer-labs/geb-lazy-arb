@@ -242,6 +242,7 @@ interface JugLike {
     function drip(bytes32) external returns (uint256);
 }
 
+/// @notice Lazy Arb contract
 contract LazyArb is ReentrancyGuardUpgradeable {
     enum Status {
         None,
@@ -270,12 +271,13 @@ contract LazyArb is ReentrancyGuardUpgradeable {
     CollateralJoinLike public ethJoin;
     CoinJoinLike public coinJoin;
     SystemCoinLike public systemCoin;
-    DaiManagerLike public dai_manager;
-    JugLike public dai_jug;
-    GemJoinLike public dai_ethJoin;
-    DaiJoinLike public dai_daiJoin;
+    DaiManagerLike public daiManager;
+    JugLike public daiJug;
+    GemJoinLike public daiEthJoin;
+    DaiJoinLike public daiDaiJoin;
     OracleRelayerLike public oracleRelayer;
-    IConnector public connector;
+    IConnector public daiConnector;
+    IConnector public raiConnector;
 
     uint256 public safe;
     uint256 public cdp;
@@ -293,12 +295,12 @@ contract LazyArb is ReentrancyGuardUpgradeable {
     /// @param taxCollector_ address
     /// @param ethJoin_ address
     /// @param coinJoin_ address
-    /// @param dai_manager_ address
-    /// @param dai_jug_ address
-    /// @param dai_ethJoin_ address
-    /// @param dai_daiJoin_ address
+    /// @param daiManager_ address
+    /// @param daiJug_ address
+    /// @param daiEthJoin_ address
+    /// @param daiDaiJoin_ address
     /// @param oracleRelayer_ address
-    /// @param connector_ address
+    /// @param connectors_ address
     function initialize(
         uint256 minCRatio_,
         uint256 maxCRatio_,
@@ -306,12 +308,12 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         address taxCollector_,
         address ethJoin_,
         address coinJoin_,
-        address dai_manager_,
-        address dai_jug_,
-        address dai_ethJoin_,
-        address dai_daiJoin_,
+        address daiManager_,
+        address daiJug_,
+        address daiEthJoin_,
+        address daiDaiJoin_,
         address oracleRelayer_,
-        address connector_
+        address[2] memory connectors_
     ) external initializer {
         require(
             minCRatio_ < maxCRatio_ && maxCRatio_ < MAX_CRATIO,
@@ -321,12 +323,12 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         require(taxCollector_ != address(0), "LazyArb/null-tax-collector");
         require(ethJoin_ != address(0), "LazyArb/null-eth-join");
         require(coinJoin_ != address(0), "LazyArb/null-coin-join");
-        require(dai_manager_ != address(0), "LazyArb/null-dai-manager");
-        require(dai_jug_ != address(0), "LazyArb/null-dai-jug");
-        require(dai_ethJoin_ != address(0), "LazyArb/null-dai-eth-join");
-        require(dai_daiJoin_ != address(0), "LazyArb/null-dai-dai-join");
+        require(daiManager_ != address(0), "LazyArb/null-dai-manager");
+        require(daiJug_ != address(0), "LazyArb/null-dai-jug");
+        require(daiEthJoin_ != address(0), "LazyArb/null-dai-eth-join");
+        require(daiDaiJoin_ != address(0), "LazyArb/null-dai-dai-join");
         require(oracleRelayer_ != address(0), "LazyArb/null-oracle-relayer");
-        require(connector_ != address(0), "LazyArb/null-connector");
+        require(connectors_[0] != address(0) && connectors_[1] != address(0), "LazyArb/null-connector");
 
         owner = msg.sender;
         minCRatio = minCRatio_;
@@ -337,7 +339,8 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         ethJoin = CollateralJoinLike(ethJoin_);
         coinJoin = CoinJoinLike(coinJoin_);
         oracleRelayer = OracleRelayerLike(oracleRelayer_);
-        connector = IConnector(connector_);
+        daiConnector = IConnector(connectors_[0]);
+        raiConnector = IConnector(connectors_[1]);
 
         safeEngine = SAFEEngineLike(safeManager.safeEngine());
         systemCoin = coinJoin.systemCoin();
@@ -345,12 +348,12 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         safe = safeManager.openSAFE("ETH-A", address(this));
         safeManager.allowSAFE(safe, msg.sender, 1);
 
-        dai_manager = DaiManagerLike(dai_manager_);
-        dai_jug = JugLike(dai_jug_);
-        dai_ethJoin = GemJoinLike(dai_ethJoin_);
-        dai_daiJoin = DaiJoinLike(dai_daiJoin_);
+        daiManager = DaiManagerLike(daiManager_);
+        daiJug = JugLike(daiJug_);
+        daiEthJoin = GemJoinLike(daiEthJoin_);
+        daiDaiJoin = DaiJoinLike(daiDaiJoin_);
 
-        cdp = dai_manager.open("ETH-A", address(this));
+        cdp = daiManager.open("ETH-A", address(this));
 
         oracleRelayer.redemptionPrice();
     }
@@ -362,11 +365,12 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         owner = owner_;
     }
 
-    /// @notice Sets minCRatio, maxCRatio value
-    /// @param connector_ New connector address
-    function setConnector(address connector_) external onlyOwner {
-        require(connector_ != address(0), "LazyArb/null-connector");
-        connector = IConnector(connector_);
+    /// @notice Sets daiConnector, raiConnector addresses
+    /// @param connectors_ New connectors address
+    function setConnectors(address[2] memory connectors_) external onlyOwner {
+        require(connectors_[0] != address(0) && connectors_[1] != address(0), "LazyArb/null-connector");
+        daiConnector = IConnector(connectors_[0]);
+        raiConnector = IConnector(connectors_[1]);
     }
 
     /// @notice Sets minCRatio, maxCRatio value
@@ -457,10 +461,10 @@ contract LazyArb is ReentrancyGuardUpgradeable {
                 0
             );
 
-            IERC20Upgradeable lpToken = IERC20Upgradeable(connector.lpToken());
+            IERC20Upgradeable lpToken = IERC20Upgradeable(daiConnector.lpToken());
             uint256 lpTokenBalance = lpToken.balanceOf(address(this));
-            lpToken.approve(address(connector), lpTokenBalance);
-            connector.withdraw(requiredDAIAmount);
+            lpToken.approve(address(daiConnector), lpTokenBalance);
+            daiConnector.withdraw(requiredDAIAmount);
 
             uniswapSwap(
                 address(DAI),
@@ -492,9 +496,9 @@ contract LazyArb is ReentrancyGuardUpgradeable {
     function rebalanceLong() public {
         require(status == Status.Long, "LazyArb/status-not-long");
 
-        address urn = dai_manager.urns(cdp);
-        address vat = dai_manager.vat();
-        bytes32 ilk = dai_manager.ilks(cdp);
+        address urn = daiManager.urns(cdp);
+        address vat = daiManager.vat();
+        bytes32 ilk = daiManager.ilks(cdp);
         (uint256 depositedCollateral, ) = VatLike(vat).urns(ilk, urn);
 
         uint256 targetDebtAmount;
@@ -534,22 +538,22 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         if (targetDebtAmount > currentDebtAmount) {
             uint256 wadD = targetDebtAmount - currentDebtAmount;
             // Generates debt
-            dai_manager.frob(cdp, 0, _getDrawDart(vat, urn, ilk, wadD));
+            daiManager.frob(cdp, 0, _getDrawDart(vat, urn, ilk, wadD));
 
             exitDai(wadD);
             depositDai();
         } else {
             uint256 wadD = currentDebtAmount - targetDebtAmount;
-            IERC20Upgradeable lpToken = IERC20Upgradeable(connector.lpToken());
+            IERC20Upgradeable lpToken = IERC20Upgradeable(daiConnector.lpToken());
             uint256 lpTokenBalance = lpToken.balanceOf(address(this));
-            lpToken.approve(address(connector), lpTokenBalance);
-            connector.withdraw(wadD);
+            lpToken.approve(address(daiConnector), lpTokenBalance);
+            daiConnector.withdraw(wadD);
             wadD = DAI.balanceOf(address(this));
 
             // Joins DAI amount into the vat
             _daiJoin_join(urn, wadD);
             // Paybacks debt to the CDP and unlocks WETH amount from it
-            dai_manager.frob(cdp, 0, -_getDrawDart(vat, urn, ilk, wadD));
+            daiManager.frob(cdp, 0, -_getDrawDart(vat, urn, ilk, wadD));
         }
     }
 
@@ -595,10 +599,10 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         require(status == Status.Short, "LazyArb/status-not-short");
         status = Status.None;
 
-        IERC20Upgradeable lpToken = IERC20Upgradeable(connector.lpToken());
+        IERC20Upgradeable lpToken = IERC20Upgradeable(daiConnector.lpToken());
         uint256 lpTokenBalance = lpToken.balanceOf(address(this));
-        lpToken.approve(address(connector), lpTokenBalance);
-        connector.withdrawAll();
+        lpToken.approve(address(daiConnector), lpTokenBalance);
+        daiConnector.withdrawAll();
 
         uint256 daiBalance = DAI.balanceOf(address(this));
         uniswapSwap(
@@ -667,14 +671,14 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         require(status != Status.Short, "LazyArb/status-short");
         status = Status.Long;
 
-        address urn = dai_manager.urns(cdp);
-        // address vat = dai_manager.vat();
-        // bytes32 ilk = dai_manager.ilks(cdp);
+        address urn = daiManager.urns(cdp);
+        // address vat = daiManager.vat();
+        // bytes32 ilk = daiManager.ilks(cdp);
         // Receives ETH amount, converts it to WETH and joins it into the vat
         uint256 collateralBalance = address(this).balance;
-        dai_ethJoin_join(urn, collateralBalance);
+        daiEthJoin_join(urn, collateralBalance);
         // Locks WETH amount into the CDP and generates debt
-        dai_manager.frob(cdp, toInt(collateralBalance), 0);
+        daiManager.frob(cdp, toInt(collateralBalance), 0);
 
         rebalanceLong();
     }
@@ -683,20 +687,20 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         require(status == Status.Long, "LazyArb/status-not-long");
         status = Status.None;
 
-        IERC20Upgradeable lpToken = IERC20Upgradeable(connector.lpToken());
+        IERC20Upgradeable lpToken = IERC20Upgradeable(daiConnector.lpToken());
         uint256 lpTokenBalance = lpToken.balanceOf(address(this));
-        lpToken.approve(address(connector), lpTokenBalance);
-        connector.withdrawAll();
+        lpToken.approve(address(daiConnector), lpTokenBalance);
+        daiConnector.withdrawAll();
 
         uint256 daiBalance = DAI.balanceOf(address(this));
 
-        address vat = dai_manager.vat();
-        address urn = dai_manager.urns(cdp);
-        bytes32 ilk = dai_manager.ilks(cdp);
+        address vat = daiManager.vat();
+        address urn = daiManager.urns(cdp);
+        bytes32 ilk = daiManager.ilks(cdp);
         uint256 daiDebtAmount = _getWipeAllWad(vat, urn, urn, ilk);
         if (daiBalance < daiDebtAmount) {
             uint256 missingDaiAmount = daiDebtAmount - daiBalance;
-            address WETH = address(dai_ethJoin.gem());
+            address WETH = address(daiEthJoin.gem());
             uint256 requiredETHAmount = uniswapV3Quoter.quoteExactOutputSingle(
                 WETH,
                 address(DAI),
@@ -704,11 +708,11 @@ contract LazyArb is ReentrancyGuardUpgradeable {
                 missingDaiAmount,
                 0
             );
-            dai_manager.frob(cdp, -toInt(requiredETHAmount), 0);
+            daiManager.frob(cdp, -toInt(requiredETHAmount), 0);
             // Moves the amount from the SAFE handler to proxy's address
-            dai_manager.flux(cdp, address(this), requiredETHAmount);
+            daiManager.flux(cdp, address(this), requiredETHAmount);
             // Exits WETH amount to proxy address as a token
-            dai_ethJoin.exit(address(this), requiredETHAmount);
+            daiEthJoin.exit(address(this), requiredETHAmount);
             // Swap WETH to DAI
             uniswapSwap(
                 WETH,
@@ -725,13 +729,13 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         // Joins DAI amount into the vat
         _daiJoin_join(urn, daiDebtAmount);
         // Paybacks debt to the CDP and unlocks WETH amount from it
-        dai_manager.frob(cdp, -toInt(depositedCollateral), -int(art));
+        daiManager.frob(cdp, -toInt(depositedCollateral), -int(art));
         // Moves the amount from the CDP urn to proxy's address
-        dai_manager.flux(cdp, address(this), depositedCollateral);
+        daiManager.flux(cdp, address(this), depositedCollateral);
         // Exits WETH amount to proxy address as a token
-        dai_ethJoin.exit(address(this), depositedCollateral);
+        daiEthJoin.exit(address(this), depositedCollateral);
         // Converts WETH to ETH
-        dai_ethJoin.gem().withdraw(depositedCollateral);
+        daiEthJoin.gem().withdraw(depositedCollateral);
     }
 
     function exitRaiAndConvertToDai(
@@ -757,23 +761,23 @@ contract LazyArb is ReentrancyGuardUpgradeable {
     }
 
     function exitDai(uint256 wadD) internal {
-        address vat = dai_manager.vat();
+        address vat = daiManager.vat();
 
         // Moves the DAI amount (balance in the vat in rad) to proxy's address
-        dai_manager.move(cdp, address(this), toRad(wadD));
+        daiManager.move(cdp, address(this), toRad(wadD));
         // Allows adapter to access to proxy's DAI balance in the vat
-        if (VatLike(vat).can(address(this), address(dai_daiJoin)) == 0) {
-            VatLike(vat).hope(address(dai_daiJoin));
+        if (VatLike(vat).can(address(this), address(daiDaiJoin)) == 0) {
+            VatLike(vat).hope(address(daiDaiJoin));
         }
         // Exits DAI to the user's wallet as a token
-        dai_daiJoin.exit(address(this), wadD);
+        daiDaiJoin.exit(address(this), wadD);
     }
 
     function depositDai() internal {
         uint256 daiBalance = DAI.balanceOf(address(this));
-        DAI.approve(address(connector), daiBalance);
+        DAI.approve(address(daiConnector), daiBalance);
 
-        connector.deposit(daiBalance);
+        daiConnector.deposit(daiBalance);
     }
 
     function uniswapSwap(
@@ -809,13 +813,13 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         ethJoin.join(safeHandler, value);
     }
 
-    function dai_ethJoin_join(address urn, uint256 value) internal {
+    function daiEthJoin_join(address urn, uint256 value) internal {
         // Wraps ETH in WETH
-        dai_ethJoin.gem().deposit{value: value}();
+        daiEthJoin.gem().deposit{value: value}();
         // Approves adapter to take the WETH amount
-        dai_ethJoin.gem().approve(address(dai_ethJoin), value);
+        daiEthJoin.gem().approve(address(daiEthJoin), value);
         // Joins WETH collateral into the vat
-        dai_ethJoin.join(urn, value);
+        daiEthJoin.join(urn, value);
     }
 
     /// @notice Modify a SAFE's collateralization ratio while keeping the generated COIN or collateral freed in the SAFE handler address.
@@ -855,9 +859,9 @@ contract LazyArb is ReentrancyGuardUpgradeable {
 
     function _daiJoin_join(address urn, uint256 wad) internal {
         // Approves adapter to take the DAI amount
-        dai_daiJoin.dai().approve(address(dai_daiJoin), wad);
+        daiDaiJoin.dai().approve(address(daiDaiJoin), wad);
         // Joins DAI into the vat
-        dai_daiJoin.join(urn, wad);
+        daiDaiJoin.join(urn, wad);
     }
 
     /// @notice Gets delta debt generated (Total Safe debt minus available safeHandler COIN balance)
@@ -950,7 +954,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         uint256 wad
     ) internal returns (int dart) {
         // Updates stability fee rate
-        uint256 rate = dai_jug.drip(ilk);
+        uint256 rate = daiJug.drip(ilk);
 
         // Gets DAI balance of the urn in the vat
         uint256 dai = VatLike(vat).dai(urn);

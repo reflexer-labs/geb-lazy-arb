@@ -13,12 +13,13 @@ contract LazyArbFactory {
     address public immutable taxCollector;
     address public immutable ethJoin;
     address public immutable coinJoin;
-    address public immutable dai_manager;
-    address public immutable dai_jug;
-    address public immutable dai_ethJoin;
-    address public immutable dai_daiJoin;
+    address public immutable daiManager;
+    address public immutable daiJug;
+    address public immutable daiEthJoin;
+    address public immutable daiDaiJoin;
     address public immutable oracleRelayer;
-    address public immutable connector;
+    address public immutable daiConnector;
+    address public immutable raiConnector;
 
     constructor(
         address beacon_,
@@ -26,12 +27,13 @@ contract LazyArbFactory {
         address taxCollector_,
         address ethJoin_,
         address coinJoin_,
-        address dai_manager_,
-        address dai_jug_,
-        address dai_ethJoin_,
-        address dai_daiJoin_,
+        address daiManager_,
+        address daiJug_,
+        address daiEthJoin_,
+        address daiDaiJoin_,
         address oracleRelayer_,
-        address connector_
+        address daiConnector_,
+        address raiConnector_
     ) {
         require(beacon_ != address(0), "LazyArbFactory/null-beacon");
         require(safeManager_ != address(0), "LazyArbFactory/null-safe-manager");
@@ -41,50 +43,61 @@ contract LazyArbFactory {
         );
         require(ethJoin_ != address(0), "LazyArbFactory/null-eth-join");
         require(coinJoin_ != address(0), "LazyArbFactory/null-coin-join");
-        require(dai_manager_ != address(0), "LazyArbFactory/null-dai-manager");
-        require(dai_jug_ != address(0), "LazyArbFactory/null-dai-jug");
-        require(dai_ethJoin_ != address(0), "LazyArbFactory/null-dai-eth-join");
-        require(dai_daiJoin_ != address(0), "LazyArbFactory/null-dai-dai-join");
+        require(daiManager_ != address(0), "LazyArbFactory/null-dai-manager");
+        require(daiJug_ != address(0), "LazyArbFactory/null-dai-jug");
+        require(daiEthJoin_ != address(0), "LazyArbFactory/null-dai-eth-join");
+        require(daiDaiJoin_ != address(0), "LazyArbFactory/null-dai-dai-join");
         require(
             oracleRelayer_ != address(0),
             "LazyArbFactory/null-oracle-relayer"
         );
-        require(connector_ != address(0), "LazyArbFactory/null-connector");
+        require(
+            daiConnector_ != address(0),
+            "LazyArbFactory/null-dai-connector"
+        );
+        require(
+            raiConnector_ != address(0),
+            "LazyArbFactory/null-rai-connector"
+        );
 
         beacon = beacon_;
         safeManager = safeManager_;
         taxCollector = taxCollector_;
         ethJoin = ethJoin_;
         coinJoin = coinJoin_;
-        dai_manager = dai_manager_;
-        dai_jug = dai_jug_;
-        dai_ethJoin = dai_ethJoin_;
-        dai_daiJoin = dai_daiJoin_;
+        daiManager = daiManager_;
+        daiJug = daiJug_;
+        daiEthJoin = daiEthJoin_;
+        daiDaiJoin = daiDaiJoin_;
         oracleRelayer = oracleRelayer_;
-        connector = connector_;
+        daiConnector = daiConnector_;
+        raiConnector = raiConnector_;
     }
 
     function createLazyArb(
         uint256 minCRatio_,
         uint256 maxCRatio_
     ) external returns (address lazyArb) {
+        address[2] memory connectors;
+        connectors[0] = daiConnector;
+        connectors[1] = raiConnector;
         lazyArb = address(
             new BeaconProxy(
                 beacon,
                 abi.encodeWithSignature(
-                    "initialize(uint256,uint256,address,address,address,address,address,address,address,address,address,address)",
+                    "initialize(uint256,uint256,address,address,address,address,address,address,address,address,address,address[2])",
                     minCRatio_,
                     maxCRatio_,
                     safeManager,
                     taxCollector,
                     ethJoin,
                     coinJoin,
-                    dai_manager,
-                    dai_jug,
-                    dai_ethJoin,
-                    dai_daiJoin,
+                    daiManager,
+                    daiJug,
+                    daiEthJoin,
+                    daiDaiJoin,
                     oracleRelayer,
-                    connector
+                    connectors
                 )
             )
         );
