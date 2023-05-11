@@ -327,27 +327,8 @@ contract LazyArb is ReentrancyGuardUpgradeable {
 
     function lockETHAndGenerateDebt(
         uint256 minAmount
-    ) public onlyOwner {
-        require(
-            oracleRelayer.redemptionRate() < RAY,
-            "LazyArb/redemption-rate-positive"
-        );
-
-        require(status != Status.Long, "LazyArb/status-long");
-        status = Status.Short;
-
-        address safeHandler = safeManager.safes(safe);
-
-        // Receives ETH amount, converts it to WETH and joins it into the safeEngine
-        uint256 collateralBalance = address(this).balance;
-        ethJoin_join(safeHandler, collateralBalance);
-        // Locks WETH amount into the SAFE
-        modifySAFECollateralization(
-            toInt(collateralBalance),
-            0
-        );
-
-        rebalanceShort(minAmount);
+    ) external onlyOwner {
+        _lockETHAndGenerateDebt(minAmount);
     }
 
     function rebalanceShort(
@@ -420,80 +401,12 @@ contract LazyArb is ReentrancyGuardUpgradeable {
     /// @param minRaiAmount uint256 - Minimum RAI amount expect in swap
     function repayDebtAndFreeETH(
         uint256 minRaiAmount
-    ) public onlyOwner {
-        require(status == Status.Short, "LazyArb/status-not-short");
-        status = Status.None;
-
-        IERC20Upgradeable lpToken = IERC20Upgradeable(connector.lpToken());
-        uint256 lpTokenBalance = lpToken.balanceOf(address(this));
-        lpToken.approve(address(connector), lpTokenBalance);
-        connector.withdrawAll();
-
-        uint256 daiBalance = DAI.balanceOf(address(this));
-        uniswapSwap(address(DAI), address(systemCoin), daiBalance, minRaiAmount);
-
-        uint256 raiBalance = systemCoin.balanceOf(address(this));
-
-        address safeHandler = safeManager.safes(safe);
-        bytes32 collateralType = safeManager.collateralTypes(safe);
-        uint256 raiDebtAmount = _getRepaidAllDebt(safeHandler, safeHandler, collateralType);
-        if (raiBalance < raiDebtAmount) {
-            uint256 missingRaiAmount = raiDebtAmount - raiBalance;
-            address WETH = address(ethJoin.collateral());
-            uint256 requiredETHAmount = uniswapV3Quoter.quoteExactOutputSingle(
-                WETH,
-                address(systemCoin),
-                uint24(500),
-                missingRaiAmount,
-                0
-            );
-            modifySAFECollateralization(
-                -toInt(requiredETHAmount),
-                0
-            );
-            // Moves the amount from the SAFE handler to proxy's address
-            transferCollateral(address(this), requiredETHAmount);
-            // Exits WETH amount to proxy address as a token
-            ethJoin.exit(address(this), requiredETHAmount);
-            // Swap WETH to RAI
-            uniswapSwap(WETH, address(systemCoin), requiredETHAmount, missingRaiAmount);
-        }
-
-        (uint256 depositedCollateralToken, uint256 generatedDebt) = safeEngine.safes(collateralType, safeHandler);
-        // Joins COIN amount into the safeEngine
-        _coinJoin_join(safeHandler, raiDebtAmount);
-        // Paybacks debt to the SAFE and unlocks WETH amount from it
-        modifySAFECollateralization(
-            -toInt(depositedCollateralToken),
-            -int(generatedDebt)
-        );
-        // Moves the amount from the SAFE handler to proxy's address
-        transferCollateral(address(this), depositedCollateralToken);
-        // Exits WETH amount to proxy address as a token
-        ethJoin.exit(address(this), depositedCollateralToken);
-        // Converts WETH to ETH
-        ethJoin.collateral().withdraw(depositedCollateralToken);
+    ) external onlyOwner {
+        _repayDebtAndFreeETH(minRaiAmount);
     }
 
-    function lockETHAndDraw() public onlyOwner {
-        require(
-            oracleRelayer.redemptionRate() >= RAY,
-            "LazyArb/redemption-rate-positive"
-        );
-
-        require(status != Status.Short, "LazyArb/status-short");
-        status = Status.Long;
-
-        address urn = dai_manager.urns(cdp);
-        // address vat = dai_manager.vat();
-        // bytes32 ilk = dai_manager.ilks(cdp);
-        // Receives ETH amount, converts it to WETH and joins it into the vat
-        uint256 collateralBalance = address(this).balance;
-        dai_ethJoin_join(urn, collateralBalance);
-        // Locks WETH amount into the CDP and generates debt
-        dai_manager.frob(cdp, toInt(collateralBalance), 0);
-
-        rebalanceLong();
+    function lockETHAndDraw() external onlyOwner {
+        _lockETHAndDraw();
     }
 
     function rebalanceLong() public {
@@ -556,7 +469,128 @@ contract LazyArb is ReentrancyGuardUpgradeable {
     }
 
     function wipeAndFreeETH(
-    ) public onlyOwner {
+    ) external onlyOwner {
+        _wipeAndFreeETH();
+    }
+
+    function flip(
+        uint256 minAmount
+    ) external {
+        if (oracleRelayer.redemptionRate() < RAY) {
+            require(status == Status.Long, "LazyArb/status-not-long");
+
+            _wipeAndFreeETH();
+            _lockETHAndGenerateDebt(minAmount);
+        } else {
+            require(status == Status.Short, "LazyArb/status-not-short");
+
+            _repayDebtAndFreeETH(minAmount);
+            _lockETHAndDraw();
+        }
+    }
+
+    function _lockETHAndGenerateDebt(uint256 minAmount) internal {
+        require(
+            oracleRelayer.redemptionRate() < RAY,
+            "LazyArb/redemption-rate-positive"
+        );
+
+        require(status != Status.Long, "LazyArb/status-long");
+        status = Status.Short;
+
+        address safeHandler = safeManager.safes(safe);
+
+        // Receives ETH amount, converts it to WETH and joins it into the safeEngine
+        uint256 collateralBalance = address(this).balance;
+        ethJoin_join(safeHandler, collateralBalance);
+        // Locks WETH amount into the SAFE
+        modifySAFECollateralization(
+            toInt(collateralBalance),
+            0
+        );
+
+        rebalanceShort(minAmount);
+    }
+
+    function _repayDebtAndFreeETH(
+        uint256 minRaiAmount
+    ) internal {
+        require(status == Status.Short, "LazyArb/status-not-short");
+        status = Status.None;
+
+        IERC20Upgradeable lpToken = IERC20Upgradeable(connector.lpToken());
+        uint256 lpTokenBalance = lpToken.balanceOf(address(this));
+        lpToken.approve(address(connector), lpTokenBalance);
+        connector.withdrawAll();
+
+        uint256 daiBalance = DAI.balanceOf(address(this));
+        uniswapSwap(address(DAI), address(systemCoin), daiBalance, minRaiAmount);
+
+        uint256 raiBalance = systemCoin.balanceOf(address(this));
+
+        address safeHandler = safeManager.safes(safe);
+        bytes32 collateralType = safeManager.collateralTypes(safe);
+        uint256 raiDebtAmount = _getRepaidAllDebt(safeHandler, safeHandler, collateralType);
+        if (raiBalance < raiDebtAmount) {
+            uint256 missingRaiAmount = raiDebtAmount - raiBalance;
+            address WETH = address(ethJoin.collateral());
+            uint256 requiredETHAmount = uniswapV3Quoter.quoteExactOutputSingle(
+                WETH,
+                address(systemCoin),
+                uint24(500),
+                missingRaiAmount,
+                0
+            );
+            modifySAFECollateralization(
+                -toInt(requiredETHAmount),
+                0
+            );
+            // Moves the amount from the SAFE handler to proxy's address
+            transferCollateral(address(this), requiredETHAmount);
+            // Exits WETH amount to proxy address as a token
+            ethJoin.exit(address(this), requiredETHAmount);
+            // Swap WETH to RAI
+            uniswapSwap(WETH, address(systemCoin), requiredETHAmount, missingRaiAmount);
+        }
+
+        (uint256 depositedCollateralToken, uint256 generatedDebt) = safeEngine.safes(collateralType, safeHandler);
+        // Joins COIN amount into the safeEngine
+        _coinJoin_join(safeHandler, raiDebtAmount);
+        // Paybacks debt to the SAFE and unlocks WETH amount from it
+        modifySAFECollateralization(
+            -toInt(depositedCollateralToken),
+            -int(generatedDebt)
+        );
+        // Moves the amount from the SAFE handler to proxy's address
+        transferCollateral(address(this), depositedCollateralToken);
+        // Exits WETH amount to proxy address as a token
+        ethJoin.exit(address(this), depositedCollateralToken);
+        // Converts WETH to ETH
+        ethJoin.collateral().withdraw(depositedCollateralToken);
+    }
+
+    function _lockETHAndDraw() internal {
+        require(
+            oracleRelayer.redemptionRate() >= RAY,
+            "LazyArb/redemption-rate-positive"
+        );
+
+        require(status != Status.Short, "LazyArb/status-short");
+        status = Status.Long;
+
+        address urn = dai_manager.urns(cdp);
+        // address vat = dai_manager.vat();
+        // bytes32 ilk = dai_manager.ilks(cdp);
+        // Receives ETH amount, converts it to WETH and joins it into the vat
+        uint256 collateralBalance = address(this).balance;
+        dai_ethJoin_join(urn, collateralBalance);
+        // Locks WETH amount into the CDP and generates debt
+        dai_manager.frob(cdp, toInt(collateralBalance), 0);
+
+        rebalanceLong();
+    }
+
+    function _wipeAndFreeETH() internal {
         require(status == Status.Long, "LazyArb/status-not-long");
         status = Status.None;
 
@@ -609,22 +643,6 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         dai_ethJoin.exit(address(this), depositedCollateral);
         // Converts WETH to ETH
         dai_ethJoin.gem().withdraw(depositedCollateral);
-    }
-
-    function flip(
-        uint256 minAmount
-    ) external {
-        if (oracleRelayer.redemptionRate() < RAY) {
-            require(status == Status.Long, "LazyArb/status-not-long");
-
-            wipeAndFreeETH();
-            lockETHAndGenerateDebt(minAmount);
-        } else {
-            require(status == Status.Short, "LazyArb/status-not-short");
-
-            repayDebtAndFreeETH(minAmount);
-            lockETHAndDraw();
-        }
     }
 
     function exitRaiAndConvertToDai(

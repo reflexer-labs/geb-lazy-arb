@@ -127,19 +127,17 @@ contract LazyArbTest is Test {
     }
 
     function testRebalanceShort_not_short() public {
-        startHoax(keeper);
+        hoax(keeper);
         vm.expectRevert("LazyArb/status-not-short");
         lazyArb.rebalanceShort(0);
-        vm.stopPrank();
     }
 
     function testRebalanceShort_cRatio_in_range() public {
         this.short(user, 30 ether);
 
-        startHoax(keeper);
+        hoax(keeper);
         vm.expectRevert("LazyArb/cRatio-in-range");
         lazyArb.rebalanceShort(0);
-        vm.stopPrank();
     }
 
     function testRebalanceShort_cRatio_below_range() public {
@@ -148,9 +146,8 @@ contract LazyArbTest is Test {
         hoax(user);
         lazyArb.setCRatio(600, 700);
 
-        startHoax(keeper);
+        hoax(keeper);
         lazyArb.rebalanceShort(0);
-        vm.stopPrank();
 
         assertEq(address(lazyArb).balance, 0);
         assertEq(uint8(lazyArb.status()), uint8(LazyArb.Status.Short));
@@ -168,9 +165,8 @@ contract LazyArbTest is Test {
         hoax(user);
         lazyArb.setCRatio(400, 500);
 
-        startHoax(keeper);
+        hoax(keeper);
         lazyArb.rebalanceShort(0);
-        vm.stopPrank();
 
         assertEq(address(lazyArb).balance, 0);
         assertEq(uint8(lazyArb.status()), uint8(LazyArb.Status.Short));
@@ -287,19 +283,17 @@ contract LazyArbTest is Test {
     }
 
     function testRebalanceLong_not_long() public {
-        startHoax(keeper);
+        hoax(keeper);
         vm.expectRevert("LazyArb/status-not-long");
         lazyArb.rebalanceLong();
-        vm.stopPrank();
     }
 
     function testRebalanceLong_cRatio_in_range() public {
         this.long(user, 30 ether);
 
-        startHoax(keeper);
+        hoax(keeper);
         vm.expectRevert("LazyArb/cRatio-in-range");
         lazyArb.rebalanceLong();
-        vm.stopPrank();
     }
 
     function testRebalanceLong_cRatio_below_range() public {
@@ -308,9 +302,8 @@ contract LazyArbTest is Test {
         hoax(user);
         lazyArb.setCRatio(600, 700);
 
-        startHoax(keeper);
+        hoax(keeper);
         lazyArb.rebalanceLong();
-        vm.stopPrank();
 
         assertEq(address(lazyArb).balance, 0);
         assertEq(uint8(lazyArb.status()), uint8(LazyArb.Status.Long));
@@ -329,9 +322,8 @@ contract LazyArbTest is Test {
         hoax(user);
         lazyArb.setCRatio(400, 500);
 
-        startHoax(keeper);
+        hoax(keeper);
         lazyArb.rebalanceLong();
-        vm.stopPrank();
 
         assertEq(address(lazyArb).balance, 0);
         assertEq(uint8(lazyArb.status()), uint8(LazyArb.Status.Long));
@@ -348,7 +340,7 @@ contract LazyArbTest is Test {
         this.short(user, 30 ether);
 
         vm.expectRevert("LazyArb/status-not-long");
-        hoax(user);
+        hoax(keeper);
         lazyArb.flip(0);
     }
 
@@ -356,14 +348,14 @@ contract LazyArbTest is Test {
         this.long(user, 30 ether);
 
         vm.expectRevert("LazyArb/status-not-short");
-        hoax(user);
+        hoax(keeper);
         lazyArb.flip(0);
     }
 
     function testFlip_success_long_to_short() public {
         this.long(user, 30 ether);
 
-        startHoax(user);
+        startHoax(keeper);
         mockOracle.setRedemptionRate(0.998e27);
         lazyArb.flip(0);
         vm.stopPrank();
@@ -388,8 +380,9 @@ contract LazyArbTest is Test {
     function testFlip_success_short_to_long() public {
         this.short(user, 30 ether);
 
-        startHoax(user);
+        hoax(user);
         mockOracle.setRedemptionRate(1.002e27);
+        startHoax(keeper);
         lazyArb.flip(0);
         vm.stopPrank();
 
