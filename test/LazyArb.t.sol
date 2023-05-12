@@ -99,7 +99,7 @@ contract LazyArbTest is Test {
         depositETH(caller, depositAmount);
         startHoax(caller);
         mockOracle.setRedemptionRate(1.002e27);
-        lazyArb.lockETHAndDraw();
+        lazyArb.lockETHAndDraw(4000 * 1e18);
         vm.stopPrank();
     }
 
@@ -248,7 +248,7 @@ contract LazyArbTest is Test {
         startHoax(keeper);
         mockOracle.setRedemptionRate(1.002e27);
         vm.expectRevert("LazyArb/not-owner");
-        lazyArb.lockETHAndDraw();
+        lazyArb.lockETHAndDraw(4000 * 1e18);
         vm.stopPrank();
     }
 
@@ -256,7 +256,7 @@ contract LazyArbTest is Test {
         depositETH(user, 30 ether);
         startHoax(user);
         mockOracle.setRedemptionRate(1.002e27);
-        lazyArb.lockETHAndDraw();
+        lazyArb.lockETHAndDraw(4000 * 1e18);
         vm.stopPrank();
 
         assertEq(address(lazyArb).balance, 0);
@@ -275,14 +275,14 @@ contract LazyArbTest is Test {
         depositETH(user, 30 ether);
         startHoax(user);
         mockOracle.setRedemptionRate(1.002e27);
-        lazyArb.lockETHAndDraw();
+        lazyArb.lockETHAndDraw(4000 * 1e18);
         vm.stopPrank();
 
         skip(10 days);
 
         startHoax(keeper);
         vm.expectRevert("LazyArb/not-owner");
-        lazyArb.wipeAndFreeETH();
+        lazyArb.wipeAndFreeETH(6000 * 1e18);
 
         vm.stopPrank();
     }
@@ -291,11 +291,11 @@ contract LazyArbTest is Test {
         depositETH(user, 30 ether);
         startHoax(user);
         mockOracle.setRedemptionRate(1.002e27);
-        lazyArb.lockETHAndDraw();
+        lazyArb.lockETHAndDraw(4000 * 1e18);
 
         skip(10 days);
 
-        lazyArb.wipeAndFreeETH();
+        lazyArb.wipeAndFreeETH(6000 * 1e18);
 
         vm.stopPrank();
 
@@ -314,7 +314,7 @@ contract LazyArbTest is Test {
     function testRebalanceLong_not_long() public {
         hoax(keeper);
         vm.expectRevert("LazyArb/status-not-long");
-        lazyArb.rebalanceLong();
+        lazyArb.rebalanceLong(0);
     }
 
     function testRebalanceLong_cRatio_in_range() public {
@@ -322,7 +322,7 @@ contract LazyArbTest is Test {
 
         hoax(keeper);
         vm.expectRevert("LazyArb/cRatio-in-range");
-        lazyArb.rebalanceLong();
+        lazyArb.rebalanceLong(0);
     }
 
     function testRebalanceLong_cRatio_below_range() public {
@@ -332,7 +332,7 @@ contract LazyArbTest is Test {
         lazyArb.setCRatio(600, 700);
 
         hoax(keeper);
-        lazyArb.rebalanceLong();
+        lazyArb.rebalanceLong(0);
 
         assertEq(address(lazyArb).balance, 0);
         assertEq(uint8(lazyArb.status()), uint8(LazyArb.Status.Long));
@@ -353,7 +353,7 @@ contract LazyArbTest is Test {
         lazyArb.setCRatio(400, 500);
 
         hoax(keeper);
-        lazyArb.rebalanceLong();
+        lazyArb.rebalanceLong(0);
 
         assertEq(address(lazyArb).balance, 0);
         assertEq(uint8(lazyArb.status()), uint8(LazyArb.Status.Long));
