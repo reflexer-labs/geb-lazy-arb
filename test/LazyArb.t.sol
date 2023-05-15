@@ -91,7 +91,7 @@ contract LazyArbTest is Test {
         depositETH(caller, depositAmount);
         startHoax(caller);
         mockOracle.setRedemptionRate(0.998e27);
-        lazyArb.lockETHAndGenerateDebt(8000 * 1e18);
+        lazyArb.lockETHAndGenerateDebt();
         vm.stopPrank();
     }
 
@@ -99,7 +99,7 @@ contract LazyArbTest is Test {
         depositETH(caller, depositAmount);
         startHoax(caller);
         mockOracle.setRedemptionRate(1.002e27);
-        lazyArb.lockETHAndDraw(4000 * 1e18);
+        lazyArb.lockETHAndDraw();
         vm.stopPrank();
     }
 
@@ -120,7 +120,7 @@ contract LazyArbTest is Test {
         startHoax(keeper);
         mockOracle.setRedemptionRate(0.998e27);
         vm.expectRevert("LazyArb/not-owner");
-        lazyArb.lockETHAndGenerateDebt(8000 * 1e18);
+        lazyArb.lockETHAndGenerateDebt();
         vm.stopPrank();
     }
 
@@ -128,7 +128,7 @@ contract LazyArbTest is Test {
         depositETH(user, 30 ether);
         startHoax(user);
         mockOracle.setRedemptionRate(0.998e27);
-        lazyArb.lockETHAndGenerateDebt(8000 * 1e18);
+        lazyArb.lockETHAndGenerateDebt();
         vm.stopPrank();
 
         assertEq(address(lazyArb).balance, 0);
@@ -147,7 +147,7 @@ contract LazyArbTest is Test {
     function testRebalanceShort_not_short() public {
         hoax(keeper);
         vm.expectRevert("LazyArb/status-not-short");
-        lazyArb.rebalanceShort(0);
+        lazyArb.rebalanceShort();
     }
 
     function testRebalanceShort_cRatio_in_range() public {
@@ -155,7 +155,7 @@ contract LazyArbTest is Test {
 
         hoax(keeper);
         vm.expectRevert("LazyArb/cRatio-in-range");
-        lazyArb.rebalanceShort(0);
+        lazyArb.rebalanceShort();
     }
 
     function testRebalanceShort_cRatio_below_range() public {
@@ -165,7 +165,7 @@ contract LazyArbTest is Test {
         lazyArb.setCRatio(600, 700);
 
         hoax(keeper);
-        lazyArb.rebalanceShort(0);
+        lazyArb.rebalanceShort();
 
         assertEq(address(lazyArb).balance, 0);
         assertEq(uint8(lazyArb.status()), uint8(LazyArb.Status.Short));
@@ -187,7 +187,7 @@ contract LazyArbTest is Test {
         lazyArb.setCRatio(400, 500);
 
         hoax(keeper);
-        lazyArb.rebalanceShort(0);
+        lazyArb.rebalanceShort();
 
         assertEq(address(lazyArb).balance, 0);
         assertEq(uint8(lazyArb.status()), uint8(LazyArb.Status.Short));
@@ -206,14 +206,14 @@ contract LazyArbTest is Test {
         depositETH(user, 30 ether);
         startHoax(user);
         mockOracle.setRedemptionRate(0.998e27);
-        lazyArb.lockETHAndGenerateDebt(8000 * 1e18);
+        lazyArb.lockETHAndGenerateDebt();
         vm.stopPrank();
 
         skip(10 days);
 
         startHoax(keeper);
         vm.expectRevert("LazyArb/not-owner");
-        lazyArb.repayDebtAndFreeETH(4450 * 1e18);
+        lazyArb.repayDebtAndFreeETH();
 
         vm.stopPrank();
     }
@@ -222,11 +222,11 @@ contract LazyArbTest is Test {
         depositETH(user, 30 ether);
         startHoax(user);
         mockOracle.setRedemptionRate(0.998e27);
-        lazyArb.lockETHAndGenerateDebt(8000 * 1e18);
+        lazyArb.lockETHAndGenerateDebt();
 
         skip(10 days);
 
-        lazyArb.repayDebtAndFreeETH(4450 * 1e18);
+        lazyArb.repayDebtAndFreeETH();
 
         vm.stopPrank();
 
@@ -248,7 +248,7 @@ contract LazyArbTest is Test {
         startHoax(keeper);
         mockOracle.setRedemptionRate(1.002e27);
         vm.expectRevert("LazyArb/not-owner");
-        lazyArb.lockETHAndDraw(4000 * 1e18);
+        lazyArb.lockETHAndDraw();
         vm.stopPrank();
     }
 
@@ -256,7 +256,7 @@ contract LazyArbTest is Test {
         depositETH(user, 30 ether);
         startHoax(user);
         mockOracle.setRedemptionRate(1.002e27);
-        lazyArb.lockETHAndDraw(4000 * 1e18);
+        lazyArb.lockETHAndDraw();
         vm.stopPrank();
 
         assertEq(address(lazyArb).balance, 0);
@@ -275,14 +275,14 @@ contract LazyArbTest is Test {
         depositETH(user, 30 ether);
         startHoax(user);
         mockOracle.setRedemptionRate(1.002e27);
-        lazyArb.lockETHAndDraw(4000 * 1e18);
+        lazyArb.lockETHAndDraw();
         vm.stopPrank();
 
         skip(10 days);
 
         startHoax(keeper);
         vm.expectRevert("LazyArb/not-owner");
-        lazyArb.wipeAndFreeETH(6000 * 1e18);
+        lazyArb.wipeAndFreeETH();
 
         vm.stopPrank();
     }
@@ -291,11 +291,11 @@ contract LazyArbTest is Test {
         depositETH(user, 30 ether);
         startHoax(user);
         mockOracle.setRedemptionRate(1.002e27);
-        lazyArb.lockETHAndDraw(4000 * 1e18);
+        lazyArb.lockETHAndDraw();
 
         skip(10 days);
 
-        lazyArb.wipeAndFreeETH(6000 * 1e18);
+        lazyArb.wipeAndFreeETH();
 
         vm.stopPrank();
 
@@ -314,7 +314,7 @@ contract LazyArbTest is Test {
     function testRebalanceLong_not_long() public {
         hoax(keeper);
         vm.expectRevert("LazyArb/status-not-long");
-        lazyArb.rebalanceLong(0);
+        lazyArb.rebalanceLong();
     }
 
     function testRebalanceLong_cRatio_in_range() public {
@@ -322,7 +322,7 @@ contract LazyArbTest is Test {
 
         hoax(keeper);
         vm.expectRevert("LazyArb/cRatio-in-range");
-        lazyArb.rebalanceLong(0);
+        lazyArb.rebalanceLong();
     }
 
     function testRebalanceLong_cRatio_below_range() public {
@@ -332,7 +332,7 @@ contract LazyArbTest is Test {
         lazyArb.setCRatio(600, 700);
 
         hoax(keeper);
-        lazyArb.rebalanceLong(0);
+        lazyArb.rebalanceLong();
 
         assertEq(address(lazyArb).balance, 0);
         assertEq(uint8(lazyArb.status()), uint8(LazyArb.Status.Long));
@@ -353,7 +353,7 @@ contract LazyArbTest is Test {
         lazyArb.setCRatio(400, 500);
 
         hoax(keeper);
-        lazyArb.rebalanceLong(0);
+        lazyArb.rebalanceLong();
 
         assertEq(address(lazyArb).balance, 0);
         assertEq(uint8(lazyArb.status()), uint8(LazyArb.Status.Long));
@@ -372,7 +372,7 @@ contract LazyArbTest is Test {
 
         vm.expectRevert("LazyArb/status-not-long");
         hoax(keeper);
-        lazyArb.flip(0);
+        lazyArb.flip();
     }
 
     function testFlip_fail_not_short() public {
@@ -380,7 +380,7 @@ contract LazyArbTest is Test {
 
         vm.expectRevert("LazyArb/status-not-short");
         hoax(keeper);
-        lazyArb.flip(0);
+        lazyArb.flip();
     }
 
     function testFlip_success_long_to_short() public {
@@ -388,7 +388,7 @@ contract LazyArbTest is Test {
 
         startHoax(keeper);
         mockOracle.setRedemptionRate(0.998e27);
-        lazyArb.flip(0);
+        lazyArb.flip();
         vm.stopPrank();
 
         assertEq(address(lazyArb).balance, 0);
@@ -418,7 +418,7 @@ contract LazyArbTest is Test {
         hoax(user);
         mockOracle.setRedemptionRate(1.002e27);
         startHoax(keeper);
-        lazyArb.flip(0);
+        lazyArb.flip();
         vm.stopPrank();
 
         assertEq(address(lazyArb).balance, 0);
