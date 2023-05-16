@@ -7,6 +7,7 @@ interface ILazyArb {
     function transferOwnership(address owner_) external;
 }
 
+/// @notice LazyArb Factory
 contract LazyArbFactory {
     address public immutable beacon;
     address public immutable safeManager;
@@ -74,6 +75,9 @@ contract LazyArbFactory {
         raiConnector = raiConnector_;
     }
 
+    /// @notice Deploy new LazyArb instance
+    /// @param minCRatio_ Minimum cRatio value
+    /// @param maxCRatio_ Maximum cRatio value
     function createLazyArb(
         uint256 minCRatio_,
         uint256 maxCRatio_

@@ -411,10 +411,12 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         return oracleRelayer.redemptionRate();
     }
 
+    /// @notice Deposit ETH and generate RAI debt at target cRatio
     function lockETHAndGenerateDebt() external onlyOwner {
         _lockETHAndGenerateDebt();
     }
 
+    /// @notice Modify DAI debt to keep cRatio within target cRatio range
     function rebalanceShort() public {
         require(status == Status.Short, "LazyArb/status-not-short");
 
@@ -494,15 +496,17 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         }
     }
 
-    /// @notice Repays debt and frees ETH (sends it to msg.sender)
+    /// @notice Repay RAI debt and free ETH
     function repayDebtAndFreeETH() external onlyOwner {
         _repayDebtAndFreeETH();
     }
 
+    /// @notice Deposit ETH and generate DAI debt at target cRatio
     function lockETHAndDraw() external onlyOwner {
         _lockETHAndDraw();
     }
 
+    /// @notice Modify DAI debt to keep cRatio within target cRatio range
     function rebalanceLong() public {
         require(status == Status.Long, "LazyArb/status-not-long");
 
@@ -576,10 +580,12 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         }
     }
 
+    /// @notice Repay DAI debt and free ETH
     function wipeAndFreeETH() external onlyOwner {
         _wipeAndFreeETH();
     }
 
+    /// @notice Flip debt between RAI <-> DAI
     function flip() external {
         if (oracleRelayer.redemptionRate() < RAY) {
             require(status == Status.Long, "LazyArb/status-not-long");
@@ -594,6 +600,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         }
     }
 
+    /// @notice Deposit ETH and generate RAI debt at target cRatio
     function _lockETHAndGenerateDebt() internal {
         require(
             oracleRelayer.redemptionRate() < RAY,
@@ -614,6 +621,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         rebalanceShort();
     }
 
+    /// @notice Repay RAI debt and free ETH
     function _repayDebtAndFreeETH() internal {
         require(status == Status.Short, "LazyArb/status-not-short");
         status = Status.None;
@@ -678,6 +686,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         ethJoin.collateral().withdraw(depositedCollateralToken);
     }
 
+    /// @notice Deposit ETH and generate DAI debt at target cRatio
     function _lockETHAndDraw() internal {
         require(
             oracleRelayer.redemptionRate() >= RAY,
@@ -699,6 +708,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         rebalanceLong();
     }
 
+    /// @notice Repay DAI debt and free ETH
     function _wipeAndFreeETH() internal {
         require(status == Status.Long, "LazyArb/status-not-long");
         status = Status.None;
@@ -759,6 +769,8 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         daiEthJoin.gem().withdraw(depositedCollateral);
     }
 
+    /// @notice Exit RAI and swap to DAI
+    /// @param deltaWad RAI amount to exit
     function exitRaiAndConvertToDai(uint256 deltaWad) internal {
         // Moves the COIN amount (balance in the safeEngine in rad) to proxy's address
         transferInternalCoins(address(this), toRad(deltaWad));
@@ -782,6 +794,8 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         );
     }
 
+    /// @notice Exit DAI and swap to RAI
+    /// @param wadD DAI amount to exit
     function exitDaiAndConvertToRai(uint256 wadD) internal {
         address vat = daiManager.vat();
 
@@ -802,6 +816,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         uniswapSwap(address(DAI), address(systemCoin), daiBalance, amountMin);
     }
 
+    /// @notice Deposit DAI into connector
     function depositDai() internal {
         uint256 daiBalance = DAI.balanceOf(address(this));
         DAI.approve(address(daiConnector), daiBalance);
@@ -809,6 +824,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         daiConnector.deposit(daiBalance);
     }
 
+    /// @notice Deposit RAI into connector
     function depositRai() internal {
         uint256 raiBalance = systemCoin.balanceOf(address(this));
         systemCoin.approve(address(raiConnector), raiBalance);
@@ -816,6 +832,11 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         raiConnector.deposit(raiBalance);
     }
 
+    /// @notice Swap tokenIn to tokenOut through Uniswap v3
+    /// @param tokenIn Sell token address
+    /// @param tokenOut Buy token address
+    /// @param amountIn Sell token amount
+    /// @param amountOutMin Minimum buy token amount to get
     function uniswapSwap(
         address tokenIn,
         address tokenOut,
@@ -849,6 +870,9 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         ethJoin.join(safeHandler, value);
     }
 
+    /// @notice Joins the DAI system with the a specified value
+    /// @param urn address
+    /// @param value uint256 - Value to join
     function daiEthJoin_join(address urn, uint256 value) internal {
         // Wraps ETH in WETH
         daiEthJoin.gem().deposit{value: value}();
@@ -886,6 +910,9 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         safeManager.transferInternalCoins(safe, dst, rad);
     }
 
+    /// @notice Join into the RAI safeEngine
+    /// @param safeHandler Safe handler address
+    /// @param wad RAI amount
     function _coinJoin_join(address safeHandler, uint256 wad) internal {
         // Approves adapter to take the COIN amount
         coinJoin.systemCoin().approve(address(coinJoin), wad);
@@ -893,6 +920,9 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         coinJoin.join(safeHandler, wad);
     }
 
+    /// @notice Join into the DAI safeEngine
+    /// @param urn Safe handler address
+    /// @param wad DAI amount
     function _daiJoin_join(address urn, uint256 wad) internal {
         // Approves adapter to take the DAI amount
         daiDaiJoin.dai().approve(address(daiDaiJoin), wad);
@@ -983,6 +1013,12 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         wad = (wad * RAY) < rad ? wad + 1 : wad;
     }
 
+    /// @notice Gets debt amount for wad (rate adjusted debt)
+    /// @param vat address
+    /// @param urn address
+    /// @param ilk bytes32
+    /// @param wad uint256
+    /// @return dart
     function _getDrawDart(
         address vat,
         address urn,
@@ -1005,6 +1041,12 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         }
     }
 
+    /// @notice Gets repaid debt (rate adjusted rate minus COIN balance available in usr's address)
+    /// @param vat address
+    /// @param usr address
+    /// @param urn address
+    /// @param ilk bytes32
+    /// @return wad
     function _getWipeAllWad(
         address vat,
         address usr,
@@ -1025,12 +1067,17 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         wad = (wad * RAY) < rad ? wad + 1 : wad;
     }
 
+    /// @notice Get ETH price from price feed
+    /// @return priceFeedValue ETH price
     function _getEthPrice() internal view returns (uint256 priceFeedValue) {
         bytes32 collateralType = safeManager.collateralTypes(safe);
         (address ethFSM, , ) = oracleRelayer.collateralTypes(collateralType);
         priceFeedValue = PriceFeedLike(ethFSM).read();
     }
 
+    /// @notice Get token price from oracle. Reverts if oracle does not exist
+    /// @param token Token address
+    /// @return price Token price
     function _getTokenPrice(address token) public view returns (uint256 price) {
         address oracle = oracles[token];
         if (oracle != address(0)) {
@@ -1048,7 +1095,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
 
     /// @notice Converts a wad (18 decimal places) to rad (45 decimal places)
     function toRad(uint256 wad) internal pure returns (uint256 rad) {
-        rad = wad * (10 ** 27);
+        rad = wad * RAY;
     }
 
     receive() external payable {}
