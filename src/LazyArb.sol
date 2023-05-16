@@ -653,7 +653,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
             uint256 ethPrice = _getTokenPrice(WETH);
             uint256 requiredETHAmount = (missingRaiAmount * raiPrice) /
                 ethPrice;
-            requiredETHAmount = (requiredETHAmount * 1025) / 1000; // add 2.5% slippage
+            requiredETHAmount = (requiredETHAmount * 103) / 100; // add 3% slippage
 
             modifySAFECollateralization(-toInt(requiredETHAmount), 0);
             // Moves the amount from the SAFE handler to proxy's address
@@ -665,7 +665,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
                 WETH,
                 address(systemCoin),
                 requiredETHAmount,
-                0
+                missingRaiAmount
             );
         }
 
