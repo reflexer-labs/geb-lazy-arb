@@ -6,7 +6,6 @@ import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 import "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
 import "@uniswap/v3-periphery/contracts/interfaces/IQuoter.sol";
 import "./interface/IConnector.sol";
-import "forge-std/console.sol";
 
 abstract contract CollateralLike {
     function approve(address, uint256) public virtual;
@@ -243,6 +242,10 @@ interface JugLike {
     function drip(bytes32) external returns (uint256);
 }
 
+interface IOracle {
+    function latestAnswer() external view returns (int256);
+}
+
 /// @notice Lazy Arb contract
 contract LazyArb is ReentrancyGuardUpgradeable {
     enum Status {
@@ -279,6 +282,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
     OracleRelayerLike public oracleRelayer;
     IConnector public daiConnector;
     IConnector public raiConnector;
+    mapping(address => address) public oracles;
 
     uint256 public safe;
     uint256 public cdp;
@@ -360,6 +364,13 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         cdp = daiManager.open("ETH-A", address(this));
 
         oracleRelayer.redemptionPrice();
+
+        address WETH = address(ethJoin.collateral());
+        oracles[WETH] = 0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419;
+        oracles[address(DAI)] = 0xAed0c38402a5d19df6E4c03F4E2DceD6e29c1ee9;
+        oracles[
+            address(systemCoin)
+        ] = 0x483d36F6a1d063d580c7a24F9A42B346f3a69fbb;
     }
 
     /// @notice Transfer ownership to new owner
@@ -457,7 +468,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
             uint256 raiPrice = _getTokenPrice(address(systemCoin));
             uint256 daiPrice = _getTokenPrice(address(DAI));
             uint256 requiredDAIAmount = (deltaWad * raiPrice) / daiPrice;
-            requiredDAIAmount = (requiredDAIAmount * 101) / 100; // add 1% slippage
+            requiredDAIAmount = (requiredDAIAmount * 1012) / 1000; // add 1.2% slippage
 
             IERC20Upgradeable lpToken = IERC20Upgradeable(
                 daiConnector.lpToken()
@@ -541,7 +552,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
                 uint256 daiPrice = _getTokenPrice(address(DAI));
                 uint256 raiPrice = _getTokenPrice(address(systemCoin));
                 requiredRAIAmount = (wadD * daiPrice) / raiPrice;
-                requiredRAIAmount = (requiredRAIAmount * 101) / 100; // add 1% slippage
+                requiredRAIAmount = (requiredRAIAmount * 1012) / 1000; // add 1.2% slippage
             }
 
             IERC20Upgradeable lpToken = IERC20Upgradeable(
@@ -616,7 +627,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         uint256 daiPrice = _getTokenPrice(address(DAI));
         uint256 raiPrice = _getTokenPrice(address(systemCoin));
         uint256 amountMin = (daiBalance * daiPrice) / raiPrice;
-        amountMin = (amountMin * 99) / 100; // add 1% slippage
+        amountMin = (amountMin * 985) / 1000; // add 1.5% slippage
         uniswapSwap(address(DAI), address(systemCoin), daiBalance, amountMin);
 
         uint256 raiBalance = systemCoin.balanceOf(address(this));
@@ -634,7 +645,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
             uint256 ethPrice = _getTokenPrice(WETH);
             uint256 requiredETHAmount = (missingRaiAmount * raiPrice) /
                 ethPrice;
-            requiredETHAmount = (requiredETHAmount * 103) / 100; // add 3% slippage
+            requiredETHAmount = (requiredETHAmount * 1025) / 1000; // add 2.5% slippage
 
             modifySAFECollateralization(-toInt(requiredETHAmount), 0);
             // Moves the amount from the SAFE handler to proxy's address
@@ -646,7 +657,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
                 WETH,
                 address(systemCoin),
                 requiredETHAmount,
-                missingRaiAmount
+                0
             );
         }
 
@@ -701,7 +712,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         uint256 raiPrice = _getTokenPrice(address(systemCoin));
         uint256 daiPrice = _getTokenPrice(address(DAI));
         uint256 amountMin = (raiBalance * raiPrice) / daiPrice;
-        amountMin = (amountMin * 99) / 100; // add 1% slippage
+        amountMin = (amountMin * 985) / 1000; // add 1.5% slippage
         uniswapSwap(address(systemCoin), address(DAI), raiBalance, amountMin);
 
         uint256 daiBalance = DAI.balanceOf(address(this));
@@ -724,7 +735,12 @@ contract LazyArb is ReentrancyGuardUpgradeable {
             // Exits WETH amount to proxy address as a token
             daiEthJoin.exit(address(this), requiredETHAmount);
             // Swap WETH to DAI
-            uniswapSwap(WETH, address(DAI), requiredETHAmount, missingDaiAmount);
+            uniswapSwap(
+                WETH,
+                address(DAI),
+                requiredETHAmount,
+                missingDaiAmount
+            );
         }
 
         (uint256 depositedCollateral, uint256 art) = VatLike(vat).urns(
@@ -757,8 +773,13 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         uint256 raiPrice = _getTokenPrice(address(systemCoin));
         uint256 daiPrice = _getTokenPrice(address(DAI));
         uint256 amountMin = (systemCoinBalance * raiPrice) / daiPrice;
-        amountMin = (amountMin * 99) / 100; // add 1% slippage
-        uniswapSwap(address(systemCoin), address(DAI), systemCoinBalance, amountMin);
+        amountMin = (amountMin * 985) / 1000; // add 1.5% slippage
+        uniswapSwap(
+            address(systemCoin),
+            address(DAI),
+            systemCoinBalance,
+            amountMin
+        );
     }
 
     function exitDaiAndConvertToRai(uint256 wadD) internal {
@@ -777,7 +798,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         uint256 raiPrice = _getTokenPrice(address(systemCoin));
         uint256 daiPrice = _getTokenPrice(address(DAI));
         uint256 amountMin = (daiBalance * daiPrice) / raiPrice;
-        amountMin = (amountMin * 99) / 100; // add 1% slippage
+        amountMin = (amountMin * 985) / 1000; // add 1.5% slippage
         uniswapSwap(address(DAI), address(systemCoin), daiBalance, amountMin);
     }
 
@@ -1010,13 +1031,10 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         priceFeedValue = PriceFeedLike(ethFSM).read();
     }
 
-    function _getTokenPrice(address token) public returns (uint256 price) {
-        if (token == address(ethJoin.collateral())) {
-            return _getEthPrice();
-        } else if (token == address(systemCoin)) {
-            return oracleRelayer.redemptionPrice() / 1e9;
-        } else if (token == address(DAI)) {
-            return WAD;
+    function _getTokenPrice(address token) public view returns (uint256 price) {
+        address oracle = oracles[token];
+        if (oracle != address(0)) {
+            return uint256(IOracle(oracle).latestAnswer());
         }
         revert("LazyArb/not-supported-token");
     }
