@@ -424,7 +424,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
                 priceFeedValue) / WAD;
 
             currentDebtAmount = _getRepaidAllDebt(
-                safeHandler,
+                address(this),
                 safeHandler,
                 collateralType
             );
@@ -509,7 +509,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
             uint256 totalCollateral = (depositedCollateral * priceFeedValue) /
                 WAD;
 
-            currentDebtAmount = _getWipeAllWad(vat, urn, urn, ilk);
+            currentDebtAmount = _getWipeAllWad(vat, address(this), urn, ilk);
             {
                 uint256 currentCRatio = (currentDebtAmount * MAX_CRATIO) /
                     totalCollateral;
@@ -624,7 +624,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         address safeHandler = safeManager.safes(safe);
         bytes32 collateralType = safeManager.collateralTypes(safe);
         uint256 raiDebtAmount = _getRepaidAllDebt(
-            safeHandler,
+            address(this),
             safeHandler,
             collateralType
         );
@@ -709,7 +709,7 @@ contract LazyArb is ReentrancyGuardUpgradeable {
         address vat = daiManager.vat();
         address urn = daiManager.urns(cdp);
         bytes32 ilk = daiManager.ilks(cdp);
-        uint256 daiDebtAmount = _getWipeAllWad(vat, urn, urn, ilk);
+        uint256 daiDebtAmount = _getWipeAllWad(vat, address(this), urn, ilk);
         if (daiBalance < daiDebtAmount) {
             uint256 missingDaiAmount = daiDebtAmount - daiBalance;
             address WETH = address(daiEthJoin.gem());
